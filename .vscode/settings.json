@@ -2,7 +2,6 @@
     "editor.formatOnSave": true,
     "rust-analyzer.checkOnSave": true,
     "rust-analyzer.check.allTargets": false,
-    "rust-analyzer.cargo.target": "thumbv8m.main-none-eabihf",
     "rust-analyzer.cargo.features": "all",
     "rust-analyzer.check.command": "clippy",
     "[toml]": {
