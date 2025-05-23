@@ -1,19 +1,12 @@
-[package]
-name = "embedded-rust-template"
+[workspace]
+resolver = "2"
+members = ["mcu-traits"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/OpenDevicePartnership/embedded-rust-template"
-rust-version = "1.85"
+repository = "https://github.com/OpenDevicePartnership/embedded-mcu"
 
-[dependencies]
-# dependencies for all targets
-
-[target.'cfg(target_os = "none")'.dependencies]
-# dependencies for no-std targets
-
-[lints.clippy]
-suspicious = "forbid"
-correctness = "forbid"
-perf = "forbid"
-style = "forbid"
+[workspace.dependencies]
+embedded-services = { git = "https://github.com/OpenDevicePartnership/embedded-services" }
