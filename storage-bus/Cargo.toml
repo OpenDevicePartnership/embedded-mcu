@@ -1,0 +1,13 @@
+[package]
+name = "storage_bus"
+version = "0.1.0"
+edition = "2024"
+description = "Storage Bus Interfaces"
+repository = "https://github.com/OpenDevicePartnership/embedded-mcu"
+rust-version = "1.85"
+license = "MIT"
+
+[dependencies]
+
+[features]
+default = []

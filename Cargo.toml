@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["mcu-traits"]
+members = ["mcu-traits", "storage-bus"]
 
 [workspace.package]
 version = "0.1.0"
