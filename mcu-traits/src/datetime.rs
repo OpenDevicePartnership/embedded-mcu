@@ -60,6 +60,10 @@ pub struct Datetime {
 }
 
 impl Datetime {
+    // 1-based indexing number of days in each month.
+    // Note that the last month here is November, not December.
+    const DAYS_IN_MONTH: [u64; 12] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30];
+
     /// Convert a datetime to seconds since 1970-01-01 00:00:00, ignoring leap seconds.
     pub const fn to_unix_time_seconds(&self) -> u64 {
         let mut days: u64 = 0;
@@ -78,11 +82,10 @@ impl Datetime {
         }
 
         // Calculate days from January to the current month
-        const DAYS_IN_MONTH: [u64; 12] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30];
         {
             let mut month = 1;
             while month < self.data.month {
-                days += DAYS_IN_MONTH[month as usize];
+                days += Self::DAYS_IN_MONTH[month as usize];
                 if month == 2 && Self::is_leap_year(self.data.year) {
                     days += 1;
                 }
@@ -124,8 +127,7 @@ impl Datetime {
         }
 
         // Calculate month
-        let days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30];
-        while days >= days_in_month[month as usize] {
+        while days >= Self::DAYS_IN_MONTH[month as usize] {
             if month == 2 && Self::is_leap_year(year) {
                 if days >= 29 {
                     days -= 29;
@@ -133,7 +135,7 @@ impl Datetime {
                     break;
                 }
             } else {
-                days -= days_in_month[month as usize];
+                days -= Self::DAYS_IN_MONTH[month as usize];
             }
             month += 1;
         }
