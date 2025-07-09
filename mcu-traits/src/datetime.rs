@@ -1,5 +1,8 @@
 //! Rudimentary date/time object.
 
+#[cfg(feature = "chrono")]
+use chrono::{Datelike, Timelike};
+
 /// Represents a date and time without validation.
 /// This struct is used to make it easier to construct a validated datetime.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -17,6 +20,8 @@ pub struct UncheckedDatetime {
     pub minute: u8,
     /// The second component of the time (0-59).
     pub second: u8,
+    /// The nanosecond component of the time (0-999_999_999).
+    pub nanosecond: u32,
 }
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -35,6 +40,8 @@ pub enum DatetimeError {
     Minute,
     /// The second is invalid.
     Second,
+    /// The nanosecond is invalid.
+    Nanosecond,
 }
 
 /// Default implementation for `Datetime`.
@@ -47,6 +54,7 @@ impl Default for UncheckedDatetime {
             hour: 0,
             minute: 0,
             second: 0,
+            nanosecond: 0,
         }
     }
 }
@@ -54,7 +62,7 @@ impl Default for UncheckedDatetime {
 /// Represents a date and time.
 /// Does not support leap seconds.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(PartialEq, Debug, Default)]
+#[derive(PartialEq, Debug, Default, Copy, Clone)]
 pub struct Datetime {
     data: UncheckedDatetime,
 }
@@ -157,23 +165,21 @@ impl Datetime {
                 hour: hour as u8,
                 minute: minute as u8,
                 second: second as u8,
+                nanosecond: 0, // unix time does not have a nanosecond component
             },
         }
     }
 
     /// Creates a `Datetime` from the given time components.
     pub const fn new(data: UncheckedDatetime) -> Result<Datetime, DatetimeError> {
-        // Validate year
         if data.year < 1970 {
             return Err(DatetimeError::Year);
         }
 
-        // Validate month
         if data.month < 1 || data.month > 12 {
             return Err(DatetimeError::Month);
         }
 
-        // Validate day
         if data.day < 1 {
             return Err(DatetimeError::Day);
         }
@@ -201,19 +207,20 @@ impl Datetime {
             _ => return Err(DatetimeError::Day),
         }
 
-        // Validate hour
         if data.hour > 23 {
             return Err(DatetimeError::Hour);
         }
 
-        // Validate minute
         if data.minute > 59 {
             return Err(DatetimeError::Minute);
         }
 
-        // Validate second
         if data.second > 59 {
             return Err(DatetimeError::Second);
+        }
+
+        if data.nanosecond >= 999_999_999 {
+            return Err(DatetimeError::Nanosecond);
         }
 
         Ok(Datetime { data })
@@ -243,9 +250,76 @@ impl Datetime {
     pub const fn second(&self) -> u8 {
         self.data.second
     }
+    /// Returns the nanosecond component of the time (0-999_999_999).
+    /// Many clock implementations do not support nanosecond resolution, so it's likely that this will be rounded
+    /// or dropped entirely depending on your HAL implementation.  Check e.g. DatetimeClock::MAX_RESOLUTION_HZ
+    /// to see what the maximum resolution is.
+    pub const fn nanoseconds(&self) -> u32 {
+        self.data.nanosecond
+    }
 
     /// Check if a year is a leap year.
     const fn is_leap_year(year: u16) -> bool {
         (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl TryFrom<chrono::NaiveDateTime> for Datetime {
+    type Error = DatetimeError;
+
+    fn try_from(date_time: chrono::NaiveDateTime) -> Result<Datetime, DatetimeError> {
+        if date_time.year() < 1970 {
+            return Err(DatetimeError::Year);
+        }
+
+        // chrono::NaiveDateTime has partial support for leap seconds, which it expresses
+        // as a nanosecond value that is >= 1_000_000_000. It assumes that no leap seconds exist
+        // except if one of the operands is a leap second, in which case it will assume that that's
+        // the only leap second that exists.
+        //
+        // The Datetime type does not support leap seconds, however, so we need to adjust if
+        // we're asked to convert from a NaiveDateTime that has leap seconds.
+        // We do this by dropping the leap second if it exists.
+        // Dropping the leap second in this way is consistent with how chrono::NaiveDateTime's leap
+        // second handling works: 02:00:59 + 1 second and 2:00:60 + 1 second both return 02:01:00.
+        //
+        let mut ns_without_leap = date_time.and_utc().timestamp_subsec_nanos();
+        if ns_without_leap >= 1_000_000_000 {
+            ns_without_leap -= 1_000_000_000;
+        }
+
+        Ok(Self {
+            data: UncheckedDatetime {
+                year: date_time.year() as u16,
+                month: date_time.month() as u8,
+                day: date_time.day() as u8,
+                hour: date_time.hour() as u8,
+                minute: date_time.minute() as u8,
+                second: date_time.second() as u8,
+                nanosecond: ns_without_leap,
+            },
+        })
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl From<Datetime> for chrono::NaiveDateTime {
+    fn from(date_time: Datetime) -> Self {
+        // Unwraps here are safe because our datetime constructor upholds a superset of the invariants
+        // that chrono::NaiveDateTime does (we're stricter about leap seconds)
+        chrono::NaiveDate::from_ymd_opt(
+            date_time.data.year as i32,
+            date_time.data.month as u32,
+            date_time.data.day as u32,
+        )
+        .unwrap()
+        .and_hms_nano_opt(
+            date_time.data.hour as u32,
+            date_time.data.minute as u32,
+            date_time.data.second as u32,
+            date_time.data.nanosecond,
+        )
+        .unwrap()
     }
 }
