@@ -13,6 +13,10 @@ url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.to
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
+[[exemptions.chrono]]
+version = "0.4.40"
+criteria = "safe-to-deploy"
+
 [[exemptions.defmt]]
 version = "1.0.1"
 criteria = "safe-to-deploy"
