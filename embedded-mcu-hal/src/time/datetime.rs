@@ -5,7 +5,7 @@ use chrono::{Datelike, Timelike};
 
 /// Represents a date and time without validation.
 /// This struct is used to make it easier to construct a validated datetime.
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub struct UncheckedDatetime {
     /// The year component of the date.
@@ -24,7 +24,7 @@ pub struct UncheckedDatetime {
     pub nanosecond: u32,
 }
 
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug)]
 /// Represents errors that can occur when constructing a Datetime.
 pub enum DatetimeError {
@@ -61,7 +61,7 @@ impl Default for UncheckedDatetime {
 
 /// Represents a date and time.
 /// Does not support leap seconds.
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug, Default, Copy, Clone)]
 pub struct Datetime {
     data: UncheckedDatetime,
@@ -327,9 +327,6 @@ impl From<Datetime> for chrono::NaiveDateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(all(test, feature = "defmt"))]
-    compile_error!("Tests don't work with defmt enabled - try `cargo test --no-default-features`.");
 
     fn verify_unix_timestamp_roundtrip(data: UncheckedDatetime) {
         let dt = Datetime::new(data).expect("Datetime should be valid");

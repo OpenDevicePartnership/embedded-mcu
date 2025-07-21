@@ -2,7 +2,7 @@
 
 use super::datetime::Datetime;
 
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug)]
 pub enum DatetimeClockError {
     /// The operation could not be completed because the clock hardware is not enabled.
