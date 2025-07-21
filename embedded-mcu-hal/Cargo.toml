@@ -1,0 +1,18 @@
+[package]
+name = "embedded-mcu-hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono = { version = "^0.4", default-features = false, optional = true }
+defmt = { version = "1.0", optional = true }
+
+[features]
+default = ["defmt"]
+
+chrono = ["dep:chrono"]
+defmt = ["dep:defmt"]
+
+
