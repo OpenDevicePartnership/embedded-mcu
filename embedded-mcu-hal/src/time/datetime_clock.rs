@@ -1,6 +1,6 @@
 //! Traits for datetime-based clocks (e.g. real-time clocks).
 
-use crate::datetime::Datetime;
+use super::datetime::Datetime;
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(PartialEq, Debug)]
