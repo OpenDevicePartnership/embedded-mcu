@@ -18,7 +18,7 @@ pub enum DatetimeClockError {
 /// Trait for datetime-based clock (e.g. real-time clock).
 /// This trait provides methods to get and set the current wall-clock date and time in a structured format.
 /// Typical usage would be setting the current UTC time, periodically syncing it with an external time source (e.g. host OS with NTP daemon) to account for leap seconds.
-pub trait DatetimeClock {
+pub trait DatetimeClock: Send {
     /// Returns the current structured date and time.
     fn get_current_datetime(&self) -> Result<Datetime, DatetimeClockError>;
 
@@ -26,6 +26,6 @@ pub trait DatetimeClock {
     /// If a Datetime with greater precision than MAX_RESOLUTION_HZ is provided, it will be truncated to the maximum resolution.
     fn set_current_datetime(&mut self, datetime: &Datetime) -> Result<(), DatetimeClockError>;
 
-    /// The resolution of the RTC in Hz.  Typical values are 1hz and 1000hz.
-    const MAX_RESOLUTION_HZ: u32;
+    /// Returns the resolution of the RTC in Hz.  Typical values are 1hz and 1000hz.
+    fn max_resolution_hz(&self) -> u32;
 }
