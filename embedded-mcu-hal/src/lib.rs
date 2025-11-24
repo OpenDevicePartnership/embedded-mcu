@@ -70,5 +70,6 @@
 
 pub mod i2c;
 pub mod nvram;
+pub mod smbus;
 pub mod time;
 pub mod watchdog;
