@@ -370,7 +370,7 @@ mod tests {
         }
 
         #[test]
-        fn valid_days_always_work(day in 1u8..=7) {
+        fn valid_days_always_work(day in 1u8..=31) {
             let data = UncheckedDatetime {
                 day, ..Default::default()
             };
