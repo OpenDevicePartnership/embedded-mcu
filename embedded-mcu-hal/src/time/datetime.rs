@@ -137,7 +137,7 @@ impl Datetime {
             year += 1;
         }
 
-        // Calculate month if valid
+        // Calculate month
         while month < Self::MAX_MONTH && days >= Self::DAYS_IN_MONTH[month as usize] {
             if month == 2 && Self::is_leap_year(year) {
                 if days >= 29 {
