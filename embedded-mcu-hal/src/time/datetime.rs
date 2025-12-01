@@ -392,7 +392,7 @@ mod tests {
         }
 
         #[test]
-        fn valid_minutes_always_work(minute in 0u8..=23) {
+        fn valid_minutes_always_work(minute in 0u8..=59) {
             let data = UncheckedDatetime {
                 minute, ..Default::default()
             };
