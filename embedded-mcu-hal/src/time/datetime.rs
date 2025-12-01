@@ -330,12 +330,87 @@ impl From<Datetime> for chrono::NaiveDateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn verify_unix_timestamp_roundtrip(data: UncheckedDatetime) {
         let dt = Datetime::new(data).expect("Datetime should be valid");
         let secs = dt.to_unix_time_seconds();
         let dt2 = Datetime::from_unix_time_seconds(secs);
         assert_eq!(dt, dt2, "Datetime roundtrip failed for {:?}", data);
+    }
+
+    proptest! {
+        #[test]
+        fn valid_seconds_always_work(secs in 0u64..=2005949145599) {
+            let dt = Datetime::from_unix_time_seconds(secs);
+            let secs2 = dt.to_unix_time_seconds();
+            prop_assert_eq!(secs, secs2, "Datetime roundtrip failed");
+        }
+
+        #[test]
+        fn valid_years_always_work(year in 1970u16..=65535) {
+            let data = UncheckedDatetime {
+                year, ..Default::default()
+            };
+            let dt = Datetime::new(data).expect("Datetime should be valid");
+            let secs = dt.to_unix_time_seconds();
+            let dt2 = Datetime::from_unix_time_seconds(secs);
+            prop_assert_eq!(dt, dt2, "Datetime roundtrip failed for {:?}", data);
+        }
+
+        #[test]
+        fn valid_months_always_work(month in 1u8..=12) {
+            let data = UncheckedDatetime {
+                month, ..Default::default()
+            };
+            let dt = Datetime::new(data).expect("Datetime should be valid");
+            let secs = dt.to_unix_time_seconds();
+            let dt2 = Datetime::from_unix_time_seconds(secs);
+            prop_assert_eq!(dt, dt2, "Datetime roundtrip failed for {:?}", data);
+        }
+
+        #[test]
+        fn valid_days_always_work(day in 1u8..=7) {
+            let data = UncheckedDatetime {
+                day, ..Default::default()
+            };
+            let dt = Datetime::new(data).expect("Datetime should be valid");
+            let secs = dt.to_unix_time_seconds();
+            let dt2 = Datetime::from_unix_time_seconds(secs);
+            prop_assert_eq!(dt, dt2, "Datetime roundtrip failed for {:?}", data);
+        }
+
+        #[test]
+        fn valid_hours_always_work(hour in 0u8..=23) {
+            let data = UncheckedDatetime {
+                hour, ..Default::default()
+            };
+            let dt = Datetime::new(data).expect("Datetime should be valid");
+            let secs = dt.to_unix_time_seconds();
+            let dt2 = Datetime::from_unix_time_seconds(secs);
+            prop_assert_eq!(dt, dt2, "Datetime roundtrip failed for {:?}", data);
+        }
+
+        #[test]
+        fn valid_minutes_always_work(minute in 0u8..=23) {
+            let data = UncheckedDatetime {
+                minute, ..Default::default()
+            };
+            let dt = Datetime::new(data).expect("Datetime should be valid");
+            let secs = dt.to_unix_time_seconds();
+            let dt2 = Datetime::from_unix_time_seconds(secs);
+            prop_assert_eq!(dt, dt2, "Datetime roundtrip failed for {:?}", data);
+        }
+
+        #[test]
+        fn all_leap_years_have_29_days_in_february(year in (1970u16..=65535).
+                                                   prop_filter("Leap years", |y| Datetime::is_leap_year(*y) )) {
+            let data = UncheckedDatetime {
+                year, month: 2, day: 29, ..Default::default()
+            };
+            let dt = Datetime::new(data);
+            prop_assert!(dt.is_ok());
+        }
     }
 
     #[test]
