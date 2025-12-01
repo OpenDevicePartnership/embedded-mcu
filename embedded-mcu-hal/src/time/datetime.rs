@@ -69,8 +69,9 @@ pub struct Datetime {
 
 impl Datetime {
     // 1-based indexing number of days in each month.
-    // Note that the last month here is November, not December.
-    const DAYS_IN_MONTH: [u64; 12] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30];
+    // Indices 1-12 correspond to January-December.
+    const DAYS_IN_MONTH: [u64; 13] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const MAX_MONTH: u8 = Self::DAYS_IN_MONTH.len() as u8 - 1;
 
     /// Convert a datetime to seconds since 1970-01-01 00:00:00, ignoring leap seconds.
     pub const fn to_unix_time_seconds(&self) -> u64 {
@@ -93,7 +94,9 @@ impl Datetime {
         {
             let mut month = 1;
             while month < self.data.month {
+                // Safe indexing: month is guaranteed to be in range [1..=12] due to validation in constructor
                 days += Self::DAYS_IN_MONTH[month as usize];
+
                 if month == 2 && Self::is_leap_year(self.data.year) {
                     days += 1;
                 }
@@ -135,7 +138,7 @@ impl Datetime {
         }
 
         // Calculate month
-        while days >= Self::DAYS_IN_MONTH[month as usize] {
+        while month < Self::MAX_MONTH && days >= Self::DAYS_IN_MONTH[month as usize] {
             if month == 2 && Self::is_leap_year(year) {
                 if days >= 29 {
                     days -= 29;
@@ -408,6 +411,13 @@ mod tests {
             hour: 16,
             ..Default::default()
         });
+
+        verify_unix_timestamp_roundtrip(UncheckedDatetime {
+            year: 2024,
+            month: 12,
+            day: 31,
+            ..Default::default()
+        });
     }
 
     #[test]
@@ -517,7 +527,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: 12,
                 day: 32,
                 ..Default::default()
             }),
