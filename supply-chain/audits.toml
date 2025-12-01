@@ -1,4 +1,132 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.bitflags]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "2.9.1 -> 2.10.0"
+
+[[audits.cfg-if]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "1.0.0 -> 1.0.4"
+
+[[audits.errno]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.3.8 -> 0.3.14"
+
+[[audits.fastrand]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "2.0.2 -> 2.3.0"
+
+[[audits.getrandom]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.3.3 -> 0.3.4"
+
+[[audits.libc]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.2.170 -> 0.2.177"
+
+[[audits.linux-raw-sys]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.6.5 -> 0.11.0"
+
+[[audits.once_cell]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "1.19.0 -> 1.20.2"
+
+[[audits.proptest]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.9.0"
+
+[[audits.r-efi]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "5.3.0"
+
+[[audits.rand]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.8.5 -> 0.9.2"
+
+[[audits.rand_chacha]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.3.1 -> 0.9.0"
+
+[[audits.rand_core]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.6.4 -> 0.9.3"
+
+[[audits.rand_xorshift]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.1.1 -> 0.4.0"
+
+[[audits.regex-syntax]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.8.5 -> 0.8.8"
+
+[[audits.rustix]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.38.32 -> 1.1.2"
+
+[[audits.rusty-fork]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.3.0 -> 0.3.1"
+
+[[audits.tempfile]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "3.16.0 -> 3.23.0"
+
+[[audits.unarray]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.1.4"
+
+[[audits.wait-timeout]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.2.0 -> 0.2.1"
+
+[[audits.wasip2]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "1.0.1+wasi-0.2.4"
+
+[[audits.windows-link]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.2.0 -> 0.2.1"
+
+[[audits.windows-sys]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.61.2"
+
+[[audits.wit-bindgen]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+version = "0.46.0"
+
+[[audits.zerocopy]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.8.14 -> 0.8.31"
+
+[[audits.zerocopy-derive]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.8.14 -> 0.8.31"
