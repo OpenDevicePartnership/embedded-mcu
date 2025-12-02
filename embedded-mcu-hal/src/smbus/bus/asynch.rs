@@ -119,6 +119,128 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
     /// Returns `Some(PecCalc)` if PEC is available, or `None` if PEC support
     /// is not implemented or unavailable.
     fn get_pec_calc() -> Option<Self::PecCalc>;
+
+    /// Check PEC (Packet Error Code) validity.
+    ///
+    /// Compares a received PEC byte against a computed PEC value to verify data
+    /// integrity. This is a helper method used internally by read operations that
+    /// perform PEC verification.
+    ///
+    /// Parameters:
+    /// - `received_pec`: The PEC byte received from the bus.
+    /// - `computed_pec`: The PEC value computed locally via the `PecCalc` hasher's
+    ///   `finish()` method. Only the low byte is used for comparison.
+    ///
+    /// Returns `Ok(())` if the received PEC matches the computed PEC (after
+    /// truncating to a single byte), or an error of kind `ErrorKind::Pec` if
+    /// the values do not match, indicating a data integrity error.
+    fn check_pec(received_pec: u8, computed_pec: u64) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        computed_pec
+            .eq(&received_pec.into())
+            .then_some(())
+            .ok_or_else(|| <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec))
+    }
+
+    /// Write a buffer of data with optional PEC computation and verification.
+    ///
+    /// This is a low-level helper method that performs I2C write operations with
+    /// optional PEC (Packet Error Code) computation. When `use_pec` is false, the
+    /// data is written as-is. When `use_pec` is true, a PEC byte is computed over
+    /// the address and data payload, and the caller-provided buffer must have space
+    /// for the PEC byte at the end (i.e., the buffer should be sized to
+    /// `payload_len + 1` to accommodate the computed PEC).
+    ///
+    /// Parameters:
+    /// - `address`: 7-bit target device address (used in PEC calculation).
+    /// - `use_pec`: When true, compute PEC and append it to the transfer.
+    ///   When false, write the buffer without PEC.
+    /// - `operations`: Mutable buffer containing the data to write. When `use_pec`
+    ///   is true, the last byte of this buffer will be overwritten with the computed
+    ///   PEC value. The caller must ensure sufficient space.
+    ///
+    /// Returns `Ok(())` on success, or an error if:
+    /// - The underlying I2C write fails (converted from `I2cError`)
+    /// - PEC is requested but unavailable (returns `ErrorKind::Pec`)
+    /// - PEC computation fails or overflows (returns `ErrorKind::Pec`)
+    fn write_buf(
+        &mut self,
+        address: u8,
+        use_pec: bool,
+        operations: &mut [u8],
+    ) -> impl core::future::Future<Output = Result<(), <Self as crate::smbus::bus::ErrorType>::Error>> {
+        async move {
+            if use_pec {
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+
+                pec.write_u8(address << 1);
+                pec.write(&operations[..operations.len() - 1]);
+                let pec_elem = operations.get_mut(operations.len() - 1).ok_or(
+                    <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec),
+                )?;
+                *pec_elem = pec.finish().try_into().map_err(|_| {
+                    <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec)
+                })?;
+
+                self.write(address, operations)
+                    .await
+                    .map_err(|i2c_err| i2c_err.kind())?;
+            } else {
+                self.write(address, operations)
+                    .await
+                    .map_err(|i2c_err| i2c_err.kind())?;
+            }
+            Ok(())
+        }
+    }
+
+    /// Read a buffer of data with optional PEC verification.
+    ///
+    /// This is a low-level helper method that performs I2C read operations with
+    /// optional PEC (Packet Error Code) verification. When `use_pec` is false,
+    /// the data is read as-is. When `use_pec` is true, the data (excluding the
+    /// PEC byte) is hashed using the `PecCalc` calculator, and the final PEC byte
+    /// in the buffer is verified against the locally computed PEC. The caller must
+    /// ensure the buffer has space for the PEC byte (i.e., for a single data byte
+    /// with PEC, provide a 2-byte buffer).
+    ///
+    /// Parameters:
+    /// - `address`: 7-bit target device address (used in PEC calculation).
+    /// - `use_pec`: When true, verify the PEC byte at the end of the buffer.
+    ///   When false, read the buffer without PEC verification.
+    /// - `read`: Mutable buffer to store the received data. The last byte should
+    ///   contain the PEC byte if `use_pec` is true. All other bytes contain the
+    ///   actual payload data.
+    ///
+    /// Returns `Ok(())` on success, or an error if:
+    /// - The underlying I2C read fails (converted from `I2cError`)
+    /// - PEC is requested but unavailable (returns `ErrorKind::Pec`)
+    /// - PEC verification fails due to mismatch (returns `ErrorKind::Pec`)
+    fn read_buf(
+        &mut self,
+        address: u8,
+        use_pec: bool,
+        read: &mut [u8],
+    ) -> impl core::future::Future<Output = Result<(), <Self as crate::smbus::bus::ErrorType>::Error>> {
+        async move {
+            if use_pec {
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                self.read(address, read).await.map_err(|i2c_err| i2c_err.kind())?;
+                pec.write(&read[..read.len() - 1]);
+
+                Self::check_pec(read[read.len() - 1], pec.finish())?;
+            } else {
+                self.read(address, read).await.map_err(|i2c_err| i2c_err.kind())?;
+            }
+
+            Ok(())
+        }
+    }
+
     /// Quick Command
     ///
     /// Perform an SMBus Quick Command which uses the R/W bit of the 7-bit address
@@ -138,13 +260,17 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
         read: bool,
     ) -> impl core::future::Future<Output = Result<(), <Self as crate::smbus::bus::ErrorType>::Error>> {
         async move {
-            if read {
-                self.read(address, &mut [])
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind().into())
-            } else {
-                self.write(address, &[]).await.map_err(|i2c_err| i2c_err.kind().into())
-            }
+            self.transaction(
+                address,
+                &mut if read {
+                    [Operation::Read(&mut [])]
+                } else {
+                    [Operation::Write(&[])]
+                },
+            )
+            .await
+            .map_err(|i2c_err| i2c_err.kind())?;
+            Ok(())
         }
     }
 
@@ -169,22 +295,9 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
     ) -> impl core::future::Future<Output = Result<(), <Self as crate::smbus::bus::ErrorType>::Error>> {
         async move {
             if use_pec {
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(byte);
-                    self.write(address, &[byte, pec.finish() as u8])
-                        .await
-                        .map_err(|i2c_err| i2c_err.kind().into())
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                self.write_buf(address, true, &mut [byte, 0]).await
             } else {
-                self.write(address, &[byte])
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind().into())
+                self.write_buf(address, true, &mut [byte]).await
             }
         }
     }
@@ -209,27 +322,11 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
         async move {
             if use_pec {
                 let mut buf = [0u8, 2];
-                self.read(address, &mut buf).await.map_err(|i2c_err| i2c_err.kind())?;
-
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8((address << 1) | 0x01);
-                    pec.write_u8(buf[0]);
-                    if pec.finish() == buf[1].into() {
-                        Ok(buf[0])
-                    } else {
-                        Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                            crate::smbus::bus::ErrorKind::Pec,
-                        ))
-                    }
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                self.read_buf(address, use_pec, &mut buf).await?;
+                Ok(buf[0])
             } else {
                 let mut buf = [0u8];
-                self.read(address, &mut buf).await.map_err(|i2c_err| i2c_err.kind())?;
+                self.read_buf(address, use_pec, &mut buf).await?;
                 Ok(buf[0])
             }
         }
@@ -258,28 +355,9 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
     ) -> impl core::future::Future<Output = Result<(), <Self as crate::smbus::bus::ErrorType>::Error>> {
         async move {
             if use_pec {
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u8(byte);
-                    let pec: u8 = pec.finish().try_into().map_err(|_| {
-                        <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec)
-                    })?;
-                    Ok(self
-                        .write(address, &[register, byte, pec])
-                        .await
-                        .map_err(|i2c_err| i2c_err.kind())?)
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                self.write_buf(address, use_pec, &mut [register, byte, 0]).await
             } else {
-                Ok(self
-                    .write(address, &[register, byte])
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind())?)
+                self.write_buf(address, use_pec, &mut [register, byte]).await
             }
         }
     }
@@ -309,28 +387,19 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
         async move {
             let word_bytestream = u16::to_le_bytes(word);
             if use_pec {
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u16(word);
-                    let pec: u8 = pec.finish().try_into().map_err(|_| {
-                        <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec)
-                    })?;
-                    Ok(self
-                        .write(address, &[register, word_bytestream[0], word_bytestream[1], pec])
-                        .await
-                        .map_err(|i2c_err| i2c_err.kind())?)
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                self.write_buf(
+                    address,
+                    use_pec,
+                    &mut [register, word_bytestream[0], word_bytestream[1], 0],
+                )
+                .await
             } else {
-                Ok(self
-                    .write(address, &[register, word_bytestream[0], word_bytestream[1]])
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind())?)
+                self.write_buf(
+                    address,
+                    use_pec,
+                    &mut [register, word_bytestream[0], word_bytestream[1]],
+                )
+                .await
             }
         }
     }
@@ -358,27 +427,18 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
         async move {
             if use_pec {
                 let mut buf = [0u8; 2];
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u8((address << 1) | 0x01);
-                    self.transaction(address, &mut [Operation::Write(&[register]), Operation::Read(&mut buf)])
-                        .await
-                        .map_err(|i2c_err| i2c_err.kind())?;
-                    pec.write_u8(buf[0]);
-                    if pec.finish() == buf[1].into() {
-                        Ok(buf[0])
-                    } else {
-                        Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                            crate::smbus::bus::ErrorKind::Pec,
-                        ))
-                    }
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                pec.write_u8(register);
+                pec.write_u8((address << 1) | 0x01);
+                self.transaction(address, &mut [Operation::Write(&[register]), Operation::Read(&mut buf)])
+                    .await
+                    .map_err(|i2c_err| i2c_err.kind())?;
+                pec.write_u8(buf[0]);
+                Self::check_pec(buf[1], pec.finish())?;
+                Ok(buf[0])
             } else {
                 let mut buf = [0u8];
                 self.transaction(address, &mut [Operation::Write(&[register]), Operation::Read(&mut buf)])
@@ -414,27 +474,18 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
         async move {
             if use_pec {
                 let mut buf = [0u8; 3];
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u8((address << 1) | 0x01);
-                    self.transaction(address, &mut [Operation::Write(&[register]), Operation::Read(&mut buf)])
-                        .await
-                        .map_err(|i2c_err| i2c_err.kind())?;
-                    pec.write(&buf[..2]);
-                    if pec.finish() == buf[2].into() {
-                        Ok(u16::from_le_bytes(buf[..2].try_into().unwrap()))
-                    } else {
-                        Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                            crate::smbus::bus::ErrorKind::Pec,
-                        ))
-                    }
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                pec.write_u8(register);
+                pec.write_u8((address << 1) | 0x01);
+                self.transaction(address, &mut [Operation::Write(&[register]), Operation::Read(&mut buf)])
+                    .await
+                    .map_err(|i2c_err| i2c_err.kind())?;
+                pec.write(&buf[..2]);
+                Self::check_pec(buf[1], pec.finish())?;
+                Ok(u16::from_le_bytes(buf[..2].try_into().unwrap()))
             } else {
                 let mut buf = [0u8; 2];
                 self.transaction(address, &mut [Operation::Write(&[register]), Operation::Read(&mut buf)])
@@ -469,35 +520,26 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
         async move {
             if use_pec {
                 let mut buf = [0u8; 3];
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u16(word);
-                    pec.write_u8((address << 1) | 0x01);
-                    self.transaction(
-                        address,
-                        &mut [
-                            Operation::Write(&[register]),
-                            Operation::Write(&word.to_le_bytes()),
-                            Operation::Read(&mut buf),
-                        ],
-                    )
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind())?;
-                    pec.write(&buf[..2]);
-                    if pec.finish() == buf[2].into() {
-                        Ok(u16::from_le_bytes(buf[..2].try_into().unwrap()))
-                    } else {
-                        Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                            crate::smbus::bus::ErrorKind::Pec,
-                        ))
-                    }
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                pec.write_u8(register);
+                pec.write_u16(word);
+                pec.write_u8((address << 1) | 0x01);
+                self.transaction(
+                    address,
+                    &mut [
+                        Operation::Write(&[register]),
+                        Operation::Write(&word.to_le_bytes()),
+                        Operation::Read(&mut buf),
+                    ],
+                )
+                .await
+                .map_err(|i2c_err| i2c_err.kind())?;
+                pec.write(&buf[..2]);
+                Self::check_pec(buf[2], pec.finish())?;
+                Ok(u16::from_le_bytes(buf[..2].try_into().unwrap()))
             } else {
                 let mut buf = [0u8; 2];
                 self.transaction(
@@ -541,32 +583,28 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
                 ));
             }
             if use_pec {
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u8(data.len() as u8);
-                    pec.write(data);
-                    let pec: u8 = pec.finish().try_into().map_err(|_| {
-                        <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec)
-                    })?;
-                    Ok(self
-                        .transaction(
-                            address,
-                            &mut [
-                                Operation::Write(&[register]),
-                                Operation::Write(&[data.len() as u8]),
-                                Operation::Write(data),
-                                Operation::Write(&[pec]),
-                            ],
-                        )
-                        .await
-                        .map_err(|i2c_err| i2c_err.kind())?)
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                pec.write_u8(register);
+                pec.write_u8(data.len() as u8);
+                pec.write(data);
+                let pec: u8 = pec.finish().try_into().map_err(|_| {
+                    <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec)
+                })?;
+                Ok(self
+                    .transaction(
+                        address,
+                        &mut [
+                            Operation::Write(&[register]),
+                            Operation::Write(&[data.len() as u8]),
+                            Operation::Write(data),
+                            Operation::Write(&[pec]),
+                        ],
+                    )
+                    .await
+                    .map_err(|i2c_err| i2c_err.kind())?)
             } else {
                 Ok(self
                     .transaction(
@@ -612,36 +650,27 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
             let mut msg_size = [0u8];
             if use_pec {
                 let mut pec_buf = [0u8];
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u8((address << 1) | 0x01);
-                    self.transaction(
-                        address,
-                        &mut [
-                            Operation::Write(&[register]),
-                            Operation::Read(&mut msg_size),
-                            Operation::Read(data),
-                            Operation::Read(&mut pec_buf),
-                        ],
-                    )
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind())?;
-                    pec.write(&msg_size);
-                    pec.write(data);
-                    if pec.finish() == pec_buf[0].into() {
-                        Ok(())
-                    } else {
-                        Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                            crate::smbus::bus::ErrorKind::Pec,
-                        ))
-                    }
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                pec.write_u8(register);
+                pec.write_u8((address << 1) | 0x01);
+                self.transaction(
+                    address,
+                    &mut [
+                        Operation::Write(&[register]),
+                        Operation::Read(&mut msg_size),
+                        Operation::Read(data),
+                        Operation::Read(&mut pec_buf),
+                    ],
+                )
+                .await
+                .map_err(|i2c_err| i2c_err.kind())?;
+                pec.write(&msg_size);
+                pec.write(data);
+                Self::check_pec(pec_buf[0], pec.finish())?;
+                Ok(())
             } else {
                 self.transaction(
                     address,
@@ -689,40 +718,31 @@ pub trait Smbus: crate::smbus::bus::ErrorType + embedded_hal_async::i2c::I2c {
             let mut read_msg_size = [0u8];
             if use_pec {
                 let mut pec_buf = [0u8];
-                let pec = Self::get_pec_calc();
-                if let Some(mut pec) = pec {
-                    pec.write_u8(address << 1);
-                    pec.write_u8(register);
-                    pec.write_u8(write_data.len() as u8);
-                    pec.write(write_data);
-                    pec.write_u8((address << 1) | 0x01);
-                    self.transaction(
-                        address,
-                        &mut [
-                            Operation::Write(&[register]),
-                            Operation::Write(&[write_data.len() as u8]),
-                            Operation::Write(write_data),
-                            Operation::Read(&mut read_msg_size),
-                            Operation::Read(read_data),
-                            Operation::Read(&mut pec_buf),
-                        ],
-                    )
-                    .await
-                    .map_err(|i2c_err| i2c_err.kind())?;
-                    pec.write(&read_msg_size);
-                    pec.write(read_data);
-                    if pec.finish() == pec_buf[0].into() {
-                        Ok(())
-                    } else {
-                        Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                            crate::smbus::bus::ErrorKind::Pec,
-                        ))
-                    }
-                } else {
-                    Err(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
-                        crate::smbus::bus::ErrorKind::Pec,
-                    ))
-                }
+                let mut pec = Self::get_pec_calc().ok_or(<Self as crate::smbus::bus::ErrorType>::Error::to_kind(
+                    crate::smbus::bus::ErrorKind::Pec,
+                ))?;
+                pec.write_u8(address << 1);
+                pec.write_u8(register);
+                pec.write_u8(write_data.len() as u8);
+                pec.write(write_data);
+                pec.write_u8((address << 1) | 0x01);
+                self.transaction(
+                    address,
+                    &mut [
+                        Operation::Write(&[register]),
+                        Operation::Write(&[write_data.len() as u8]),
+                        Operation::Write(write_data),
+                        Operation::Read(&mut read_msg_size),
+                        Operation::Read(read_data),
+                        Operation::Read(&mut pec_buf),
+                    ],
+                )
+                .await
+                .map_err(|i2c_err| i2c_err.kind())?;
+                pec.write(&read_msg_size);
+                pec.write(read_data);
+                Self::check_pec(pec_buf[0], pec.finish())?;
+                Ok(())
             } else {
                 self.transaction(
                     address,
