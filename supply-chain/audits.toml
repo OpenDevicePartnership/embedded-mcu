@@ -36,6 +36,16 @@ who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
 delta = "0.6.5 -> 0.11.0"
 
+[[audits.num_enum]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.7.5"
+
+[[audits.num_enum_derive]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.7.5"
+
 [[audits.once_cell]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
@@ -80,6 +90,11 @@ delta = "0.8.5 -> 0.8.8"
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
 delta = "0.38.32 -> 1.1.2"
+
+[[audits.rustversion]]
+who = "Billy Price <williamp@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.20 -> 1.0.22"
 
 [[audits.rusty-fork]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
