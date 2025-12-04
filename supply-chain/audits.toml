@@ -11,6 +11,12 @@ who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
 delta = "1.0.0 -> 1.0.4"
 
+[[audits.defmt]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.3.100"
+notes = "defmt-rtt is used for all our logging purposes."
+
 [[audits.errno]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
