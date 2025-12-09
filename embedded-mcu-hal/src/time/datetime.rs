@@ -340,7 +340,7 @@ impl TryFrom<chrono::NaiveDateTime> for Datetime {
 impl From<Datetime> for chrono::NaiveDateTime {
     fn from(date_time: Datetime) -> Self {
         // Panic safety: unwraps here are safe because our datetime constructor upholds a superset
-        // of the invariants that chrono::NaiveDateTime does.  Specifically, chrono::NaviveDateTime
+        // of the invariants that chrono::NaiveDateTime does.  Specifically, chrono::NaiveDateTime
         // has a broader range of years supported and has partial support for leap seconds while
         // our datetime type does not.
         //
