@@ -85,7 +85,7 @@ impl Month {
 
     /// Returns true if equal, false otherwise. Equivalent to PartialEq, but usable in const contexts.
     pub const fn eq(&self, other: &Month) -> bool {
-        return (*self as u8) == (*other as u8);
+        (*self as u8) == (*other as u8)
     }
 }
 
