@@ -100,10 +100,10 @@ const fn is_leap_year(year: u16) -> bool {
 pub enum DatetimeError {
     /// The year is invalid.
     Year,
-    /// The day is invalid.
-    Day,
     /// The month is invalid.
     Month,
+    /// The day is invalid.
+    Day,
     /// The hour is invalid.
     Hour,
     /// The minute is invalid.
