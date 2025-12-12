@@ -57,7 +57,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
       - name: cargo clippy
-        run: cargo clippy --locked -- -Dwarnings -D clippy::suspicious -D clippy::correctness -D clippy::perf -D clippy::style
+        run: cargo clippy --locked -- -Dwarnings
   # Enable once we have a released crate
   # semver:
   #   runs-on: ubuntu-latest
