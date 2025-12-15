@@ -11,7 +11,7 @@ pub struct UncheckedDatetime {
     /// The year component of the date.
     pub year: u16,
     /// The month component of the date (1-12).
-    pub month: u8,
+    pub month: Month,
     /// The day component of the date (1-31).
     pub day: u8,
     /// The hour component of the time (0-23).
@@ -22,6 +22,76 @@ pub struct UncheckedDatetime {
     pub second: u8,
     /// The nanosecond component of the time (0-999_999_999).
     pub nanosecond: u32,
+}
+
+#[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
+#[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum Month {
+    January = 1,
+    February = 2,
+    March = 3,
+    April = 4,
+    May = 5,
+    June = 6,
+    July = 7,
+    August = 8,
+    September = 9,
+    October = 10,
+    November = 11,
+    December = 12,
+}
+
+impl Month {
+    pub const fn get_days_in_month(&self, year: u16) -> u8 {
+        match self {
+            Month::January => 31,
+            Month::February => {
+                if is_leap_year(year) {
+                    29
+                } else {
+                    28
+                }
+            }
+            Month::March => 31,
+            Month::April => 30,
+            Month::May => 31,
+            Month::June => 30,
+            Month::July => 31,
+            Month::August => 31,
+            Month::September => 30,
+            Month::October => 31,
+            Month::November => 30,
+            Month::December => 31,
+        }
+    }
+
+    pub const fn next_month(&self) -> Month {
+        match self {
+            Month::January => Month::February,
+            Month::February => Month::March,
+            Month::March => Month::April,
+            Month::April => Month::May,
+            Month::May => Month::June,
+            Month::June => Month::July,
+            Month::July => Month::August,
+            Month::August => Month::September,
+            Month::September => Month::October,
+            Month::October => Month::November,
+            Month::November => Month::December,
+            Month::December => Month::January,
+        }
+    }
+
+    /// Returns true if equal, false otherwise. Equivalent to PartialEq, but usable in const contexts.
+    pub const fn eq(&self, other: &Month) -> bool {
+        (*self as u8) == (*other as u8)
+    }
+}
+
+/// Check if a year is a leap year.
+const fn is_leap_year(year: u16) -> bool {
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
 #[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
@@ -49,7 +119,7 @@ impl Default for UncheckedDatetime {
     fn default() -> Self {
         UncheckedDatetime {
             year: 1970,
-            month: 1,
+            month: Month::January,
             day: 1,
             hour: 0,
             minute: 0,
@@ -68,11 +138,6 @@ pub struct Datetime {
 }
 
 impl Datetime {
-    // 1-based indexing number of days in each month.
-    // Indices 1-12 correspond to January-December.
-    const DAYS_IN_MONTH: [u64; 13] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const MAX_MONTH: u8 = Self::DAYS_IN_MONTH.len() as u8 - 1;
-
     /// Convert a datetime to seconds since 1970-01-01 00:00:00, ignoring leap seconds.
     pub const fn to_unix_time_seconds(&self) -> u64 {
         let mut days: u64 = 0;
@@ -82,7 +147,7 @@ impl Datetime {
             let mut year = 1970;
             while year < self.data.year {
                 days += 365;
-                if Self::is_leap_year(year) {
+                if is_leap_year(year) {
                     days += 1;
                 }
 
@@ -92,16 +157,10 @@ impl Datetime {
 
         // Calculate days from January to the current month
         {
-            let mut month = 1;
-            while month < self.data.month {
-                // Safe indexing: month is guaranteed to be in range [1..=12] due to validation in constructor
-                days += Self::DAYS_IN_MONTH[month as usize];
-
-                if month == 2 && Self::is_leap_year(self.data.year) {
-                    days += 1;
-                }
-
-                month += 1;
+            let mut month = Month::January;
+            while !month.eq(&self.data.month) {
+                days += month.get_days_in_month(self.data.year) as u64;
+                month = month.next_month();
             }
         }
 
@@ -120,12 +179,11 @@ impl Datetime {
         let mut secs = secs % 86400;
 
         let mut year = 1970;
-        let mut month = 1;
         let mut day = 1;
 
         // Calculate year
         while days >= 365 {
-            if Self::is_leap_year(year) {
+            if is_leap_year(year) {
                 if days >= 366 {
                     days -= 366;
                 } else {
@@ -138,17 +196,17 @@ impl Datetime {
         }
 
         // Calculate month
-        while month < Self::MAX_MONTH && days >= Self::DAYS_IN_MONTH[month as usize] {
-            if month == 2 && Self::is_leap_year(year) {
-                if days >= 29 {
-                    days -= 29;
-                } else {
+        let mut month = Month::January;
+        {
+            loop {
+                let current_month_days = month.get_days_in_month(year) as u64;
+                if days < current_month_days {
                     break;
                 }
-            } else {
-                days -= Self::DAYS_IN_MONTH[month as usize];
+
+                days -= current_month_days;
+                month = month.next_month();
             }
-            month += 1;
         }
 
         // Calculate day
@@ -179,35 +237,12 @@ impl Datetime {
             return Err(DatetimeError::Year);
         }
 
-        if data.month < 1 || data.month > 12 {
-            return Err(DatetimeError::Month);
-        }
-
         if data.day < 1 {
             return Err(DatetimeError::Day);
         }
 
-        match data.month {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => {
-                if data.day > 31 {
-                    return Err(DatetimeError::Day);
-                }
-            }
-            4 | 6 | 9 | 11 => {
-                if data.day > 30 {
-                    return Err(DatetimeError::Day);
-                }
-            }
-            2 => {
-                if Self::is_leap_year(data.year) {
-                    if data.day > 29 {
-                        return Err(DatetimeError::Day);
-                    }
-                } else if data.day > 28 {
-                    return Err(DatetimeError::Day);
-                }
-            }
-            _ => return Err(DatetimeError::Day),
+        if data.day > data.month.get_days_in_month(data.year) {
+            return Err(DatetimeError::Day);
         }
 
         if data.hour > 23 {
@@ -234,7 +269,7 @@ impl Datetime {
         self.data.year
     }
     /// Returns the month component of the date (1-12).
-    pub const fn month(&self) -> u8 {
+    pub const fn month(&self) -> Month {
         self.data.month
     }
     /// Returns the day component of the date (1-31).
@@ -259,11 +294,6 @@ impl Datetime {
     /// to see what the maximum resolution is.
     pub const fn nanoseconds(&self) -> u32 {
         self.data.nanosecond
-    }
-
-    /// Check if a year is a leap year.
-    const fn is_leap_year(year: u16) -> bool {
-        (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
     }
 }
 
@@ -295,7 +325,7 @@ impl TryFrom<chrono::NaiveDateTime> for Datetime {
         Ok(Self {
             data: UncheckedDatetime {
                 year: date_time.year() as u16,
-                month: date_time.month() as u8,
+                month: (date_time.month() as u8).try_into().map_err(|_| DatetimeError::Month)?,
                 day: date_time.day() as u8,
                 hour: date_time.hour() as u8,
                 minute: date_time.minute() as u8,
@@ -309,21 +339,25 @@ impl TryFrom<chrono::NaiveDateTime> for Datetime {
 #[cfg(feature = "chrono")]
 impl From<Datetime> for chrono::NaiveDateTime {
     fn from(date_time: Datetime) -> Self {
-        // Unwraps here are safe because our datetime constructor upholds a superset of the invariants
-        // that chrono::NaiveDateTime does (we're stricter about leap seconds)
+        // Panic safety: unwraps here are safe because our datetime constructor upholds a superset
+        // of the invariants that chrono::NaiveDateTime does.  Specifically, chrono::NaiveDateTime
+        // has a broader range of years supported and has partial support for leap seconds while
+        // our datetime type does not.
+        //
+        #[allow(clippy::expect_used)]
         chrono::NaiveDate::from_ymd_opt(
             date_time.data.year as i32,
             date_time.data.month as u32,
             date_time.data.day as u32,
         )
-        .unwrap()
+        .expect("Datetime has stricter validation than chrono::NaiveDate")
         .and_hms_nano_opt(
             date_time.data.hour as u32,
             date_time.data.minute as u32,
             date_time.data.second as u32,
             date_time.data.nanosecond,
         )
-        .unwrap()
+        .expect("Datetime has stricter validation than chrono::NaiveDateTime")
     }
 }
 
@@ -361,7 +395,7 @@ mod tests {
         #[test]
         fn valid_months_always_work(month in 1u8..=12) {
             let data = UncheckedDatetime {
-                month, ..Default::default()
+                month: month.try_into().unwrap(), ..Default::default()
             };
             let dt = Datetime::new(data).expect("Datetime should be valid");
             let secs = dt.to_unix_time_seconds();
@@ -404,9 +438,9 @@ mod tests {
 
         #[test]
         fn all_leap_years_have_29_days_in_february(year in (1970u16..=65535).
-                                                   prop_filter("Leap years", |y| Datetime::is_leap_year(*y) )) {
+                                                   prop_filter("Leap years", |y| is_leap_year(*y) )) {
             let data = UncheckedDatetime {
-                year, month: 2, day: 29, ..Default::default()
+                year, month: Month::February, day: 29, ..Default::default()
             };
             let dt = Datetime::new(data);
             prop_assert!(dt.is_ok());
@@ -414,17 +448,35 @@ mod tests {
     }
 
     #[test]
+    fn test_all_date_roundtrip() {
+        for year in 1970..=2500 {
+            for month in 1..=12 {
+                let month: Month = month.try_into().expect("Months from 1-12 should always convert");
+                let days_in_month = month.get_days_in_month(year);
+                for day in 1..=days_in_month as u8 {
+                    verify_unix_timestamp_roundtrip(UncheckedDatetime {
+                        year,
+                        month,
+                        day,
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_unix_timestamp_roundtrip() {
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 1979,
-            month: 1,
+            month: Month::January,
             day: 1,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2023,
-            month: 10,
+            month: Month::October,
             day: 4,
             hour: 16,
             ..Default::default()
@@ -432,56 +484,56 @@ mod tests {
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 3,
+            month: Month::March,
             day: 2,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 3,
+            month: Month::March,
             day: 1,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 2,
+            month: Month::February,
             day: 29,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 2,
+            month: Month::February,
             day: 28,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 1,
+            month: Month::January,
             day: 31,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 1,
+            month: Month::January,
             day: 1,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 2,
+            month: Month::February,
             day: 1,
             ..Default::default()
         });
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 10,
+            month: Month::October,
             day: 4,
             hour: 16,
             ..Default::default()
@@ -489,7 +541,7 @@ mod tests {
 
         verify_unix_timestamp_roundtrip(UncheckedDatetime {
             year: 2024,
-            month: 12,
+            month: Month::December,
             day: 31,
             ..Default::default()
         });
@@ -501,49 +553,18 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 1969,
-                month: 1,
+                month: Month::January,
                 day: 1,
                 ..Default::default()
             }),
             Err(DatetimeError::Year)
         );
 
-        // Months
-        assert_eq!(
-            Datetime::new(UncheckedDatetime {
-                year: 1970,
-                month: 0,
-                day: 1,
-                ..Default::default()
-            }),
-            Err(DatetimeError::Month)
-        );
-
-        assert_eq!(
-            Datetime::new(UncheckedDatetime {
-                year: 1970,
-                month: 0,
-                day: 1,
-                ..Default::default()
-            }),
-            Err(DatetimeError::Month)
-        );
-
-        assert_eq!(
-            Datetime::new(UncheckedDatetime {
-                year: 1970,
-                month: 13,
-                day: 1,
-                ..Default::default()
-            }),
-            Err(DatetimeError::Month)
-        );
-
         // Leap year stuff
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2100,
-                month: 2,
+                month: Month::February,
                 day: 29,
                 ..Default::default()
             }),
@@ -553,7 +574,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2015,
-                month: 2,
+                month: Month::February,
                 day: 29,
                 ..Default::default()
             }),
@@ -562,7 +583,7 @@ mod tests {
 
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2000,
-            month: 2,
+            month: Month::February,
             day: 29,
             ..Default::default()
         }) {
@@ -571,7 +592,7 @@ mod tests {
 
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2004,
-            month: 2,
+            month: Month::February,
             day: 29,
             ..Default::default()
         }) {
@@ -582,7 +603,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: Month::January,
                 day: 0,
                 ..Default::default()
             }),
@@ -592,7 +613,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: Month::January,
                 day: 32,
                 ..Default::default()
             }),
@@ -602,7 +623,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 12,
+                month: Month::December,
                 day: 32,
                 ..Default::default()
             }),
@@ -612,7 +633,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 9,
+                month: Month::September,
                 day: 31,
                 ..Default::default()
             }),
@@ -623,7 +644,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: Month::January,
                 day: 1,
                 hour: 24,
                 ..Default::default()
@@ -633,7 +654,7 @@ mod tests {
 
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2025,
-            month: 1,
+            month: Month::January,
             day: 1,
             hour: 23,
             ..Default::default()
@@ -643,7 +664,7 @@ mod tests {
 
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2025,
-            month: 1,
+            month: Month::January,
             day: 1,
             hour: 0,
             ..Default::default()
@@ -655,7 +676,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: Month::January,
                 day: 1,
                 hour: 0,
                 minute: 60,
@@ -666,7 +687,7 @@ mod tests {
 
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2025,
-            month: 1,
+            month: Month::January,
             day: 1,
             hour: 0,
             minute: 59,
@@ -679,7 +700,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: Month::January,
                 day: 1,
                 hour: 0,
                 minute: 59,
@@ -693,7 +714,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2016,
-                month: 12,
+                month: Month::December,
                 day: 31,
                 hour: 23,
                 minute: 59,
@@ -705,7 +726,7 @@ mod tests {
 
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2025,
-            month: 1,
+            month: Month::January,
             day: 1,
             hour: 0,
             minute: 59,
@@ -718,7 +739,7 @@ mod tests {
         // Nanoseconds
         if let Err(_) = Datetime::new(UncheckedDatetime {
             year: 2025,
-            month: 1,
+            month: Month::January,
             day: 1,
             hour: 0,
             minute: 59,
@@ -731,7 +752,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2025,
-                month: 1,
+                month: Month::January,
                 day: 1,
                 hour: 0,
                 minute: 59,
@@ -745,7 +766,7 @@ mod tests {
         assert_eq!(
             Datetime::new(UncheckedDatetime {
                 year: 2016,
-                month: 12,
+                month: Month::December,
                 day: 31,
                 hour: 23,
                 minute: 59,
@@ -757,14 +778,36 @@ mod tests {
     }
 
     #[test]
+    fn test_unix_time_conversion() {
+        let dt = Datetime::from_unix_time_seconds(0);
+        assert_eq!(dt.year(), 1970);
+        assert_eq!(dt.month(), Month::January);
+        assert_eq!(dt.day(), 1);
+        assert_eq!(dt.hour(), 0);
+        assert_eq!(dt.minute(), 0);
+        assert_eq!(dt.second(), 0);
+        assert_eq!(dt.nanoseconds(), 0);
+
+        let dt = Datetime::from_unix_time_seconds(86400); // 1 day later
+        assert_eq!(dt.year(), 1970);
+        assert_eq!(dt.month(), Month::January);
+        assert_eq!(dt.day(), 2);
+        assert_eq!(dt.hour(), 0);
+        assert_eq!(dt.minute(), 0);
+        assert_eq!(dt.second(), 0);
+        assert_eq!(dt.nanoseconds(), 0);
+    }
+
     #[cfg(feature = "chrono")]
-    fn test_chrono_conversion() {
+    mod chrono_test {
+        use super::*;
         use chrono::{NaiveDate, NaiveDateTime};
 
-        {
+        #[test]
+        fn test_detailed_chrono_conversion() {
             let dt = Datetime::new(UncheckedDatetime {
                 year: 2023,
-                month: 10,
+                month: Month::October,
                 day: 4,
                 hour: 16,
                 minute: 30,
@@ -786,18 +829,19 @@ mod tests {
             assert_eq!(dt, dt_from_chrono);
         }
 
-        {
+        #[test]
+        fn test_leap_seconds() {
             let chrono_leap_dt: NaiveDateTime = NaiveDate::from_ymd_opt(2016, 12, 31)
-                .expect("Should be a valid NaiveDate")
-                .and_hms_nano_opt(23, 59, 59, 1_999_999_999)
-                .expect("NaiveDateTime has partial support for leap seconds - this should be a valid NaiveTime, but not a valid Datetime. Truncation is expected in conversion.");
+                    .expect("Should be a valid NaiveDate")
+                    .and_hms_nano_opt(23, 59, 59, 1_999_999_999)
+                    .expect("NaiveDateTime has partial support for leap seconds - this should be a valid NaiveTime, but not a valid Datetime. Truncation is expected in conversion.");
 
             let dt_from_chrono_leap = Datetime::try_from(chrono_leap_dt);
             assert_eq!(
                 dt_from_chrono_leap,
                 Datetime::new(UncheckedDatetime {
                     year: 2016,
-                    month: 12,
+                    month: Month::December,
                     day: 31,
                     hour: 23,
                     minute: 59,
@@ -807,34 +851,47 @@ mod tests {
             );
         }
 
-        {
+        #[test]
+        fn test_bounds() {
             let chrono_early_dt: NaiveDateTime = NaiveDate::from_ymd_opt(1969, 12, 31)
                 .expect("Should be a valid NaiveDate")
                 .and_hms_nano_opt(23, 59, 59, 999_999_999)
                 .expect("Should be a valid NaiveTime");
 
             assert_eq!(Datetime::try_from(chrono_early_dt), Err(DatetimeError::Year));
+
+            let chrono_start_dt: NaiveDateTime = NaiveDate::from_ymd_opt(1970, 1, 1)
+                .expect("Should be a valid NaiveDate")
+                .and_hms_opt(0, 0, 0)
+                .expect("Should be a valid NaiveTime");
+
+            assert_eq!(
+                Datetime::try_from(chrono_start_dt),
+                Ok(Datetime::from_unix_time_seconds(0))
+            );
         }
-    }
 
-    #[test]
-    fn test_unix_time_conversion() {
-        let dt = Datetime::from_unix_time_seconds(0);
-        assert_eq!(dt.year(), 1970);
-        assert_eq!(dt.month(), 1);
-        assert_eq!(dt.day(), 1);
-        assert_eq!(dt.hour(), 0);
-        assert_eq!(dt.minute(), 0);
-        assert_eq!(dt.second(), 0);
-        assert_eq!(dt.nanoseconds(), 0);
+        #[test]
+        fn test_many_days() {
+            const SECONDS_IN_DAY: u64 = 24 * 60 * 60;
+            let mut chrono_dt = NaiveDate::from_ymd_opt(1970, 1, 1)
+                .expect("Should be a valid NaiveDate")
+                .and_hms_nano_opt(0, 0, 0, 0)
+                .expect("Should be a valid NaiveTime");
 
-        let dt = Datetime::from_unix_time_seconds(86400); // 1 day later
-        assert_eq!(dt.year(), 1970);
-        assert_eq!(dt.month(), 1);
-        assert_eq!(dt.day(), 2);
-        assert_eq!(dt.hour(), 0);
-        assert_eq!(dt.minute(), 0);
-        assert_eq!(dt.second(), 0);
-        assert_eq!(dt.nanoseconds(), 0);
+            let mut native_dt = Datetime::from_unix_time_seconds(0);
+
+            // ~200 years of days, not accounting for leap years
+            for _ in 0..(365 * 200) {
+                let native_dt_as_chrono: NaiveDateTime = native_dt.into();
+                assert_eq!(native_dt_as_chrono, chrono_dt, "Datetime to Chrono conversion failed");
+
+                let chrono_dt_as_native = Datetime::try_from(chrono_dt).expect("Chrono to Datetime conversion failed");
+                assert_eq!(chrono_dt_as_native, native_dt, "Chrono to Datetime conversion failed");
+
+                chrono_dt += core::time::Duration::new(SECONDS_IN_DAY, 0);
+                native_dt = Datetime::from_unix_time_seconds(native_dt.to_unix_time_seconds() + SECONDS_IN_DAY as u64);
+            }
+        }
     }
 }

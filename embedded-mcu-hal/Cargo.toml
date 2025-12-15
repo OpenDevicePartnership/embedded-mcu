@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 chrono = { version = "^0.4", default-features = false, optional = true }
 defmt = { version = "1.0", optional = true }
+num_enum = { version = "0.7.5", default-features = false }
 
 [dev-dependencies]
 proptest = "1.0.0"
@@ -18,4 +19,5 @@ default = []
 chrono = ["dep:chrono"]
 defmt = ["dep:defmt"]
 
-
+[lints]
+workspace = true

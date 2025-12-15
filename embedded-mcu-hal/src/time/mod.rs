@@ -1,6 +1,6 @@
 /// Implementation of a wall-clock date-time.
 mod datetime;
-pub use datetime::{Datetime, DatetimeError, UncheckedDatetime};
+pub use datetime::{Datetime, DatetimeError, Month, UncheckedDatetime};
 
 /// Traits for a datetime-based clock (e.g. real-time clock).
 mod datetime_clock;
