@@ -297,6 +297,18 @@ impl Datetime {
     }
 }
 
+impl From<u64> for Datetime {
+    fn from(value: u64) -> Self {
+        Self::from_unix_time_seconds(value)
+    }
+}
+
+impl From<Datetime> for u64 {
+    fn from(value: Datetime) -> Self {
+        value.to_unix_time_seconds()
+    }
+}
+
 #[cfg(feature = "chrono")]
 impl TryFrom<chrono::NaiveDateTime> for Datetime {
     type Error = DatetimeError;
