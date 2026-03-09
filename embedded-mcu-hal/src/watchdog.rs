@@ -1,7 +1,7 @@
 //! Traits for interactions with a processor's watchdog timer.
 
 /// Feeds an existing watchdog to ensure the processor isn't reset.
-pub trait Watchdog {
+pub trait Watchdog: Send {
     /// An enumeration of `Watchdog` errors.
     ///
     type Error: core::fmt::Debug;
