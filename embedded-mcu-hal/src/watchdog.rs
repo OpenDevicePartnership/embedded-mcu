@@ -11,11 +11,3 @@ pub trait Watchdog: Send {
     ///
     fn feed(&mut self) -> Result<(), Self::Error>;
 }
-
-impl<T: Watchdog> Watchdog for &mut T {
-    type Error = T::Error;
-
-    fn feed(&mut self) -> Result<(), Self::Error> {
-        T::feed(self)
-    }
-}
