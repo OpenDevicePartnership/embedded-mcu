@@ -8,9 +8,6 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/OpenDevicePartnership/embedded-mcu"
 
-[workspace.dependencies]
-embedded-services = { git = "https://github.com/OpenDevicePartnership/embedded-services" }
-
 [workspace.lints.clippy]
 correctness = "deny"
 expect_used = "deny"
