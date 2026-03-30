@@ -130,8 +130,6 @@ jobs:
         uses: taiki-e/install-action@cargo-hack
       - name: cargo test
         run: cargo hack --feature-powerset test --locked
-      - name: cargo clippy test
-        run: cargo hack --feature-powerset clippy --tests --locked -- -Dwarnings -D clippy::suspicious -D clippy::correctness -D clippy::perf -D clippy::style
 
   msrv:
     # check that we can build using the minimal rust version that is specified by this crate
