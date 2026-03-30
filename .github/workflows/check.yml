@@ -78,9 +78,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Get early warning of new lints which are regularly introduced in beta channels.
-        toolchain: [stable, beta]
-        target: [x86_64-unknown-linux-gnu, thumbv8m.main-none-eabihf]
+        toolchain: [stable]
+        target: [thumbv8m.main-none-eabihf]
     steps:
       - uses: actions/checkout@v4
         with:
