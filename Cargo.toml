@@ -3,6 +3,7 @@ resolver = "2"
 members = ["embedded-mcu-hal", "storage-bus"]
 
 [workspace.package]
+authors = ["Jerry Xie <jerryxie@microsoft.com>", "Billy Price <williamp@microsoft.com>"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
