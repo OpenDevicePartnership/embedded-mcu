@@ -1,10 +1,21 @@
-//! Rudimentary date/time object.
+//! The [`Datetime`] type and its supporting types: [`UncheckedDatetime`],
+//! [`Month`], and [`DatetimeError`].
+//!
+//! See the [`time`](super) module documentation for an overview.
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, Timelike};
 
-/// Represents a date and time without validation.
-/// This struct is used to make it easier to construct a validated datetime.
+/// A date/time value whose fields have not yet been validated.
+///
+/// This struct acts as a staging area for building a [`Datetime`].  Its fields
+/// are intentionally `pub` so they can be populated from raw hardware register
+/// values, deserialised data, or any other source without requiring an
+/// intermediate allocation.  Once all fields are set, pass the struct to
+/// [`Datetime::new`] to validate it and obtain a verified [`Datetime`].
+///
+/// The [`Default`] implementation returns 1970-01-01 00:00:00.000000000 (the
+/// Unix epoch).
 #[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub struct UncheckedDatetime {
@@ -24,6 +35,14 @@ pub struct UncheckedDatetime {
     pub nanosecond: u32,
 }
 
+/// A calendar month, represented as a `u8` discriminant in the range 1–12.
+///
+/// The numeric value matches the conventional month number (January = 1,
+/// December = 12), which makes conversions to and from hardware register
+/// values straightforward via the `num_enum` derives (`IntoPrimitive` and
+/// `TryFromPrimitive`).
+///
+/// `Month` implements `PartialOrd` so months can be compared chronologically.
 #[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(num_enum::IntoPrimitive, num_enum::TryFromPrimitive, Copy, Clone, Debug, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -43,6 +62,13 @@ pub enum Month {
 }
 
 impl Month {
+    /// Returns the number of days in this month for the given `year`.
+    ///
+    /// February returns 29 in a leap year and 28 otherwise.  All other months
+    /// return their standard Gregorian calendar day counts.  The `year`
+    /// parameter is only significant for February.
+    ///
+    /// This method is `const`, so it can be used in compile-time calculations.
     pub const fn get_days_in_month(&self, year: u16) -> u8 {
         match self {
             Month::January => 31,
@@ -66,6 +92,10 @@ impl Month {
         }
     }
 
+    /// Returns the month that follows this one.
+    ///
+    /// December wraps around to January.  This is a `const fn` so it can be
+    /// used in compile-time or loop-free iteration over months.
     pub const fn next_month(&self) -> Month {
         match self {
             Month::January => Month::February,
@@ -94,9 +124,22 @@ const fn is_leap_year(year: u16) -> bool {
     (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
+/// Errors returned by [`Datetime::new`] when a field value is out of range.
+///
+/// Each variant identifies the first field that failed validation.  The valid
+/// range for each field is:
+///
+/// | Variant | Valid range |
+/// |---------|-------------|
+/// | `Year` | ≥ 1970 |
+/// | `Month` | 1–12 (via `TryFromPrimitive` on [`Month`]; `Datetime::new` always receives a valid `Month` variant) |
+/// | `Day` | 1 through the last day of the given month (leap-year-aware) |
+/// | `Hour` | 0–23 |
+/// | `Minute` | 0–59 |
+/// | `Second` | 0–59 |
+/// | `Nanosecond` | 0–999,999,999 |
 #[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug)]
-/// Represents errors that can occur when constructing a Datetime.
 pub enum DatetimeError {
     /// The year is invalid.
     Year,
@@ -129,8 +172,35 @@ impl Default for UncheckedDatetime {
     }
 }
 
-/// Represents a date and time.
-/// Does not support leap seconds.
+/// A validated, timezone-neutral wall-clock date and time.
+///
+/// `Datetime` wraps an [`UncheckedDatetime`] whose fields have been verified
+/// by [`Datetime::new`].  Once constructed, the value is guaranteed to
+/// represent a real point in time: the year is ≥ 1970, the day is within the
+/// correct range for the month (taking leap years into account), and every
+/// time component is within its valid range.
+///
+/// # Precision
+///
+/// The type stores time down to nanosecond precision, but most hardware RTCs
+/// operate at a much coarser resolution (typically 1 Hz or 1 000 Hz).
+/// [`super::DatetimeClock::max_resolution_hz`] reports the hardware's actual
+/// resolution; sub-second precision beyond that will be silently truncated by
+/// the driver.
+///
+/// # Leap seconds
+///
+/// Leap seconds are not modelled.  All calculations treat every minute as
+/// exactly 60 seconds and every day as exactly 86 400 seconds.  This matches
+/// POSIX time semantics and how most embedded RTC hardware behaves.
+///
+/// # `chrono` interoperability
+///
+/// When the **`chrono`** Cargo feature is enabled, `Datetime` implements
+/// `TryFrom<chrono::NaiveDateTime>` (fails if the year is before 1970) and
+/// `From<Datetime> for chrono::NaiveDateTime`.  `chrono`'s partial
+/// leap-second representation is handled by dropping the extra second, which
+/// is consistent with `chrono`'s own arithmetic semantics.
 #[cfg_attr(all(feature = "defmt", not(test)), derive(defmt::Format))]
 #[derive(PartialEq, Debug, Default, Copy, Clone)]
 pub struct Datetime {
@@ -138,7 +208,18 @@ pub struct Datetime {
 }
 
 impl Datetime {
-    /// Convert a datetime to seconds since 1970-01-01 00:00:00, ignoring leap seconds.
+    /// Converts this datetime to the number of whole seconds elapsed since the
+    /// Unix epoch (1970-01-01 00:00:00 UTC), ignoring leap seconds.
+    ///
+    /// The calculation accumulates full years from 1970, then full months, then
+    /// the remaining days, and finally the sub-day seconds.  Leap years are
+    /// accounted for when counting days.
+    ///
+    /// The nanosecond field is **not** included in the result; only whole
+    /// seconds are returned.  This is intentional — Unix time is defined in
+    /// whole seconds.
+    ///
+    /// This method is `const`.
     pub const fn to_unix_time_seconds(&self) -> u64 {
         let mut days: u64 = 0;
 
@@ -173,7 +254,22 @@ impl Datetime {
         days * 86400 + secs
     }
 
-    /// Convert seconds since 1970-01-01 00:00:00 (ignoring leap seconds) to a datetime.
+    /// Constructs a `Datetime` from a Unix timestamp (seconds since
+    /// 1970-01-01 00:00:00, ignoring leap seconds).
+    ///
+    /// This is the inverse of [`to_unix_time_seconds`].  The resulting
+    /// `Datetime` always has its nanosecond field set to zero because Unix
+    /// timestamps do not carry sub-second information.
+    ///
+    /// The valid input range is `0` through approximately
+    /// `2_005_949_145_599` (year 65 535, December 31, 23:59:59).  Values
+    /// beyond this range will cause the internal year counter to overflow
+    /// `u16`.
+    ///
+    /// This method is `const`, so it can used to create compile-time
+    /// constant `Datetime` values from hardcoded Unix timestamps.
+    ///
+    /// [`to_unix_time_seconds`]: Datetime::to_unix_time_seconds
     pub const fn from_unix_time_seconds(secs: u64) -> Datetime {
         let mut days = secs / 86400;
         let mut secs = secs % 86400;
@@ -231,7 +327,23 @@ impl Datetime {
         }
     }
 
-    /// Creates a `Datetime` from the given time components.
+    /// Constructs a validated `Datetime` from an [`UncheckedDatetime`].
+    ///
+    /// All fields are checked against their valid ranges:
+    ///
+    /// * `year` must be ≥ 1970.
+    /// * `day` must be ≥ 1 and ≤ the number of days in the given month and
+    ///   year (leap-year-aware).
+    /// * `hour` must be in 0–23.
+    /// * `minute` must be in 0–59.
+    /// * `second` must be in 0–59.
+    /// * `nanosecond` must be in 0–999,999,999.
+    ///
+    /// Returns `Err(`[`DatetimeError`]`)` with the variant identifying the
+    /// first invalid field encountered.
+    ///
+    /// This method is `const`, so it can be used to create compile-time
+    /// constant `Datetime` values.
     pub const fn new(data: UncheckedDatetime) -> Result<Datetime, DatetimeError> {
         if data.year < 1970 {
             return Err(DatetimeError::Year);
@@ -264,15 +376,15 @@ impl Datetime {
         Ok(Datetime { data })
     }
 
-    /// Returns the year component of the date.
+    /// Returns the year component (≥ 1970).
     pub const fn year(&self) -> u16 {
         self.data.year
     }
-    /// Returns the month component of the date (1-12).
+    /// Returns the month component.
     pub const fn month(&self) -> Month {
         self.data.month
     }
-    /// Returns the day component of the date (1-31).
+    /// Returns the day-of-month component (1 through the last day of the stored month).
     pub const fn day(&self) -> u8 {
         self.data.day
     }
@@ -288,10 +400,13 @@ impl Datetime {
     pub const fn second(&self) -> u8 {
         self.data.second
     }
-    /// Returns the nanosecond component of the time (0-999_999_999).
-    /// Many clock implementations do not support nanosecond resolution, so it's likely that this will be rounded
-    /// or dropped entirely depending on your HAL implementation.  Check e.g. DatetimeClock::MAX_RESOLUTION_HZ
-    /// to see what the maximum resolution is.
+    /// Returns the nanosecond component (0–999,999,999).
+    ///
+    /// Most RTC hardware operates at a resolution of 1 Hz or 1 000 Hz, which
+    /// means sub-second components will be zero after a round-trip through
+    /// [`super::DatetimeClock::get_current_datetime`].  Consult
+    /// [`super::DatetimeClock::max_resolution_hz`] to determine the finest granularity
+    /// the hardware supports before relying on this value.
     pub const fn nanoseconds(&self) -> u32 {
         self.data.nanosecond
     }
