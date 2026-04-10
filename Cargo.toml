@@ -8,6 +8,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/OpenDevicePartnership/embedded-mcu"
+rust-version = "1.90"
 
 [workspace.lints.clippy]
 correctness = "deny"
