@@ -497,8 +497,10 @@ mod tests {
 
         #[test]
         fn valid_months_always_work(month in 1u8..=12) {
+            let month_res: Result<Month, _> = month.try_into();
+            prop_assert!(month_res.is_ok());
             let data = DatetimeFields {
-                month: month.try_into().unwrap(), ..Default::default()
+                month: month_res.unwrap(), ..Default::default()
             };
             let dt = Datetime::new(data).expect("Datetime should be valid");
             let secs = dt.unix_timestamp();
@@ -899,6 +901,86 @@ mod tests {
         assert_eq!(dt.minute(), 0);
         assert_eq!(dt.second(), 0);
         assert_eq!(dt.nanoseconds(), 0);
+    }
+
+    // ── Month::days_in_month() ──
+
+    #[test]
+    fn month_days_in_non_leap_year() {
+        let year = 2025; // not a leap year
+        assert_eq!(Month::January.days_in_month(year), 31);
+        assert_eq!(Month::February.days_in_month(year), 28);
+        assert_eq!(Month::March.days_in_month(year), 31);
+        assert_eq!(Month::April.days_in_month(year), 30);
+        assert_eq!(Month::May.days_in_month(year), 31);
+        assert_eq!(Month::June.days_in_month(year), 30);
+        assert_eq!(Month::July.days_in_month(year), 31);
+        assert_eq!(Month::August.days_in_month(year), 31);
+        assert_eq!(Month::September.days_in_month(year), 30);
+        assert_eq!(Month::October.days_in_month(year), 31);
+        assert_eq!(Month::November.days_in_month(year), 30);
+        assert_eq!(Month::December.days_in_month(year), 31);
+    }
+
+    #[test]
+    fn february_has_29_days_in_leap_year() {
+        assert_eq!(Month::February.days_in_month(2024), 29); // divisible by 4, not by 100
+        assert_eq!(Month::February.days_in_month(2000), 29); // divisible by 400
+    }
+
+    #[test]
+    fn february_has_28_days_when_not_leap_year() {
+        assert_eq!(Month::February.days_in_month(2025), 28); // not divisible by 4
+        assert_eq!(Month::February.days_in_month(1900), 28); // divisible by 100, not 400
+        assert_eq!(Month::February.days_in_month(2100), 28); // divisible by 100, not 400
+    }
+
+    // ── Month::next() ──
+
+    #[test]
+    fn month_next_produces_full_calendar_sequence() {
+        let expected = [
+            Month::January,
+            Month::February,
+            Month::March,
+            Month::April,
+            Month::May,
+            Month::June,
+            Month::July,
+            Month::August,
+            Month::September,
+            Month::October,
+            Month::November,
+            Month::December,
+        ];
+        for i in 0..12 {
+            assert_eq!(expected[i].next(), expected[(i + 1) % 12]);
+        }
+    }
+
+    // ── is_leap_year() century rule ──
+
+    #[test]
+    fn leap_year_century_rule() {
+        assert!(is_leap_year(2024)); // divisible by 4, not by 100
+        assert!(is_leap_year(2000)); // divisible by 400
+        assert!(!is_leap_year(2025)); // not divisible by 4
+        assert!(!is_leap_year(1900)); // divisible by 100, not 400
+        assert!(!is_leap_year(2100)); // divisible by 100, not 400
+    }
+
+    // ── DatetimeFields::default() ──
+
+    #[test]
+    fn datetime_fields_default_is_unix_epoch() {
+        let fields = DatetimeFields::default();
+        assert_eq!(fields.year, 1970);
+        assert_eq!(fields.month, Month::January);
+        assert_eq!(fields.day, 1);
+        assert_eq!(fields.hour, 0);
+        assert_eq!(fields.minute, 0);
+        assert_eq!(fields.second, 0);
+        assert_eq!(fields.nanosecond, 0);
     }
 
     #[cfg(feature = "chrono")]

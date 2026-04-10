@@ -11,6 +11,12 @@ who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
 delta = "1.0.0 -> 1.0.4"
 
+[[audits.embedded-mcu-hal]]
+who = "Felipe Balbi <felipe.balbi@microsoft.com>"
+criteria = "safe-to-deploy"
+version = "0.2.0"
+notes = " Additionally, this is ODP owned crate."
+
 [[audits.errno]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
@@ -50,6 +56,11 @@ version = "0.7.5"
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
 delta = "1.19.0 -> 1.20.2"
+
+[[audits.pin-project-lite]]
+who = "Felipe Balbi <felipe.balbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.2.16 -> 0.2.17"
 
 [[audits.proptest]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
@@ -105,6 +116,16 @@ delta = "0.3.0 -> 0.3.1"
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
 delta = "3.16.0 -> 3.23.0"
+
+[[audits.tokio]]
+who = "Felipe Balbi <felipe.balbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "1.45.0 -> 1.51.1"
+
+[[audits.tokio-macros]]
+who = "Felipe Balbi <felipe.balbi@microsoft.com>"
+criteria = "safe-to-run"
+delta = "2.5.0 -> 2.7.0"
 
 [[audits.unarray]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
