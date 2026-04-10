@@ -9,6 +9,9 @@ repository.workspace = true
 readme = "README.md"
 rust-version.workspace = true
 
+[package.metadata.docs.rs]
+features = ["chrono", "defmt"]
+
 [dependencies]
 chrono = { version = "^0.4", default-features = false, optional = true }
 defmt = { version = "1.0", optional = true }
