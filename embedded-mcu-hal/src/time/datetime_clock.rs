@@ -30,11 +30,10 @@ pub enum DatetimeClockError {
 /// # Precision
 ///
 /// The finest time granularity the hardware can store is reported by
-/// [`max_resolution_hz`].  Any sub-second information in a [`Datetime`] that
+/// [`resolution_hz`].  Any sub-second information in a [`Datetime`] that
 /// exceeds this resolution will be silently truncated when written to the
 /// hardware.  Applications that require sub-second accuracy should consult
-/// `max_resolution_hz` before relying on the nanosecond field returned by
-/// [`get_current_datetime`].
+/// `resolution_hz` before relying on the nanosecond field returned by [`now`].
 ///
 /// # Typical usage
 ///
@@ -43,15 +42,15 @@ pub enum DatetimeClockError {
 /// matters, periodically re-sync with an authoritative time source to correct
 /// for RTC crystal drift.
 ///
-/// [`max_resolution_hz`]: DatetimeClock::max_resolution_hz
-/// [`get_current_datetime`]: DatetimeClock::get_current_datetime
+/// [`resolution_hz`]: DatetimeClock::resolution_hz
+/// [`now`]: DatetimeClock::now
 pub trait DatetimeClock {
     /// Reads the current date and time from the hardware clock.
     ///
     /// Returns a [`Datetime`] representing the current wall-clock time as
     /// maintained by the RTC peripheral.  The nanosecond field of the returned
     /// value reflects the hardware's actual resolution; components finer than
-    /// [`max_resolution_hz`] will be zero.
+    /// [`resolution_hz`] will be zero.
     ///
     /// # Errors
     ///
@@ -60,17 +59,17 @@ pub trait DatetimeClock {
     /// * [`DatetimeClockError::Unknown`] — an unspecified hardware error
     ///   occurred.
     ///
-    /// [`max_resolution_hz`]: DatetimeClock::max_resolution_hz
-    fn get_current_datetime(&self) -> Result<Datetime, DatetimeClockError>;
+    /// [`resolution_hz`]: DatetimeClock::resolution_hz
+    fn now(&self) -> Result<Datetime, DatetimeClockError>;
 
     /// Sets the hardware clock to the given date and time.
     ///
-    /// After a successful call, subsequent reads via [`get_current_datetime`]
-    /// should return times no earlier than `datetime` (accounting for any time
-    /// elapsed since the call).
+    /// After a successful call, subsequent reads via [`now`] should return
+    /// times no earlier than `datetime` (accounting for any time elapsed since
+    /// the call).
     ///
     /// If `datetime` has a nanosecond value that exceeds the precision
-    /// supported by the hardware (see [`max_resolution_hz`]), the sub-second
+    /// supported by the hardware (see [`resolution_hz`]), the sub-second
     /// component will be truncated to the nearest representable value.
     ///
     /// # Errors
@@ -83,11 +82,11 @@ pub trait DatetimeClock {
     /// * [`DatetimeClockError::Unknown`] — an unspecified hardware error
     ///   occurred.
     ///
-    /// [`get_current_datetime`]: DatetimeClock::get_current_datetime
-    /// [`max_resolution_hz`]: DatetimeClock::max_resolution_hz
-    fn set_current_datetime(&mut self, datetime: &Datetime) -> Result<(), DatetimeClockError>;
+    /// [`now`]: DatetimeClock::now
+    /// [`resolution_hz`]: DatetimeClock::resolution_hz
+    fn set(&mut self, datetime: Datetime) -> Result<(), DatetimeClockError>;
 
-    /// Returns the maximum resolution of this RTC in Hz.
+    /// Returns the resolution of this RTC in Hz.
     ///
     /// This value represents the finest time granularity the hardware can
     /// store.  Common values are:
@@ -98,9 +97,8 @@ pub trait DatetimeClock {
     /// Use this value to determine how much of the nanosecond field in a
     /// [`Datetime`] is meaningful after a round-trip through the hardware.
     /// For example, a 1 Hz RTC will always return a nanosecond value of 0 and
-    /// will truncate any sub-second information passed to
-    /// [`set_current_datetime`].
+    /// will truncate any sub-second information passed to [`set`].
     ///
-    /// [`set_current_datetime`]: DatetimeClock::set_current_datetime
-    fn max_resolution_hz(&self) -> u32;
+    /// [`set`]: DatetimeClock::set
+    fn resolution_hz(&self) -> u32;
 }

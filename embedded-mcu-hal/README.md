@@ -21,7 +21,7 @@ This crate only defines the contracts they must satisfy.
 | Module | Traits | Description |
 |--------|--------|-------------|
 | `time` | `DatetimeClock` | Read and set wall-clock date/time on an RTC peripheral |
-| `time` | — | `Datetime`, `UncheckedDatetime`, `Month` value types with Unix timestamp conversion |
+| `time` | — | `Datetime`, `DatetimeFields`, `Month` value types with Unix timestamp conversion |
 | `nvram` | `Nvram`, `NvramStorage` | Access individually-addressable non-volatile RAM cells |
 | `watchdog` | `Watchdog` | Feed a hardware watchdog timer to prevent processor reset |
 
