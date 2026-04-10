@@ -102,3 +102,180 @@ pub trait DatetimeClock {
     /// [`set`]: DatetimeClock::set
     fn resolution_hz(&self) -> u32;
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use crate::time::{DatetimeFields, Month};
+
+    // ── Mock implementation ──
+
+    /// A software mock RTC for use in tests.
+    ///
+    /// Starts enabled at the Unix epoch.  Use [`MockDatetimeClock::disabled`]
+    /// to construct one in the not-enabled state, and
+    /// [`MockDatetimeClock::with_max_year`] to simulate hardware that cannot
+    /// represent years beyond a fixed limit.
+    struct MockDatetimeClock {
+        enabled: bool,
+        current: Datetime,
+        resolution_hz: u32,
+        max_year: u16,
+    }
+
+    impl MockDatetimeClock {
+        fn new(resolution_hz: u32) -> Self {
+            Self {
+                enabled: true,
+                current: Datetime::from_unix_timestamp(0),
+                resolution_hz,
+                max_year: u16::MAX,
+            }
+        }
+
+        fn disabled(resolution_hz: u32) -> Self {
+            Self {
+                enabled: false,
+                ..Self::new(resolution_hz)
+            }
+        }
+
+        fn with_max_year(mut self, max_year: u16) -> Self {
+            self.max_year = max_year;
+            self
+        }
+    }
+
+    impl DatetimeClock for MockDatetimeClock {
+        fn now(&self) -> Result<Datetime, DatetimeClockError> {
+            if !self.enabled {
+                return Err(DatetimeClockError::NotEnabled);
+            }
+            Ok(self.current)
+        }
+
+        fn set(&mut self, datetime: Datetime) -> Result<(), DatetimeClockError> {
+            if !self.enabled {
+                return Err(DatetimeClockError::NotEnabled);
+            }
+            if datetime.year() > self.max_year {
+                return Err(DatetimeClockError::UnsupportedDatetime);
+            }
+            // Truncate nanoseconds to the nearest representable tick.
+            let nanos_per_tick = 1_000_000_000u32 / self.resolution_hz;
+            let truncated_nanos = (datetime.nanoseconds() / nanos_per_tick) * nanos_per_tick;
+            self.current = Datetime::new(DatetimeFields {
+                year: datetime.year(),
+                month: datetime.month(),
+                day: datetime.day(),
+                hour: datetime.hour(),
+                minute: datetime.minute(),
+                second: datetime.second(),
+                nanosecond: truncated_nanos,
+            })
+            .expect("truncated datetime derived from a valid Datetime is always valid");
+            Ok(())
+        }
+
+        fn resolution_hz(&self) -> u32 {
+            self.resolution_hz
+        }
+    }
+
+    fn sample_datetime() -> Datetime {
+        Datetime::new(DatetimeFields {
+            year: 2025,
+            month: Month::April,
+            day: 10,
+            hour: 12,
+            minute: 30,
+            second: 45,
+            nanosecond: 123_456_789,
+        })
+        .expect("sample datetime is valid")
+    }
+
+    // ── now() tests ──
+
+    #[test]
+    fn now_returns_datetime_after_set() {
+        let mut clock = MockDatetimeClock::new(1_000_000_000);
+        let dt = sample_datetime();
+        let set_result = clock.set(dt);
+        assert!(set_result.is_ok());
+        let now_result = clock.now();
+        assert!(now_result.is_ok());
+        assert_eq!(now_result.unwrap(), dt);
+    }
+
+    #[test]
+    fn now_on_disabled_clock_returns_not_enabled() {
+        let clock = MockDatetimeClock::disabled(1);
+        assert_eq!(clock.now(), Err(DatetimeClockError::NotEnabled));
+    }
+
+    // ── set() tests ──
+
+    #[test]
+    fn set_on_disabled_clock_returns_not_enabled() {
+        let mut clock = MockDatetimeClock::disabled(1);
+        assert_eq!(clock.set(sample_datetime()), Err(DatetimeClockError::NotEnabled));
+    }
+
+    #[test]
+    fn set_with_unsupported_year_returns_unsupported_datetime() {
+        let mut clock = MockDatetimeClock::new(1).with_max_year(2099);
+        let far_future = Datetime::new(DatetimeFields {
+            year: 2100,
+            month: Month::January,
+            day: 1,
+            ..Default::default()
+        })
+        .expect("year 2100 is a valid Datetime");
+        assert_eq!(clock.set(far_future), Err(DatetimeClockError::UnsupportedDatetime));
+    }
+
+    // ── resolution_hz() tests ──
+
+    #[test]
+    fn resolution_hz_returns_configured_value() {
+        assert_eq!(MockDatetimeClock::new(1).resolution_hz(), 1);
+        assert_eq!(MockDatetimeClock::new(1_000).resolution_hz(), 1_000);
+        assert_eq!(MockDatetimeClock::new(1_000_000_000).resolution_hz(), 1_000_000_000);
+    }
+
+    // ── Sub-second truncation tests ──
+
+    #[test]
+    fn set_at_1hz_truncates_nanoseconds_to_zero() {
+        let mut clock = MockDatetimeClock::new(1);
+        let set_result = clock.set(sample_datetime());
+        assert!(set_result.is_ok());
+        let now_result = clock.now();
+        assert!(now_result.is_ok());
+        assert_eq!(now_result.unwrap().nanoseconds(), 0);
+    }
+
+    #[test]
+    fn set_at_1khz_truncates_to_milliseconds() {
+        let mut clock = MockDatetimeClock::new(1_000);
+        let set_result = clock.set(sample_datetime());
+        assert!(set_result.is_ok());
+        // 123_456_789 ns → truncated to nearest ms → 123_000_000 ns
+        let now_result = clock.now();
+        assert!(now_result.is_ok());
+        assert_eq!(now_result.unwrap().nanoseconds(), 123_000_000);
+    }
+
+    #[test]
+    fn set_at_nanosecond_resolution_preserves_nanoseconds() {
+        let mut clock = MockDatetimeClock::new(1_000_000_000);
+        let set_result = clock.set(sample_datetime());
+        assert!(set_result.is_ok());
+        let now_result = clock.now();
+        assert!(now_result.is_ok());
+        assert_eq!(now_result.unwrap().nanoseconds(), 123_456_789);
+    }
+}
