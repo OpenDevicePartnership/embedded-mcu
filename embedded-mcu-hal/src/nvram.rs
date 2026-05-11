@@ -92,6 +92,8 @@ where
     /// This method requires `&mut self` and therefore cannot be called after
     /// [`storage`] has been called (since that borrow prevents further mutable
     /// access through `self`).
+    ///
+    /// [`storage`]: Nvram::storage
     fn clear_storage(&mut self);
 }
 
