@@ -68,6 +68,7 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod i2c;
 pub mod nvram;
 pub mod time;
 pub mod watchdog;
