@@ -1,4 +1,74 @@
+//! SMBus controller API.
+//!
+//! This module hosts SMBus controller-side traits built on top of the
+//! controller traits from [`embedded_hal_async::i2c`]. Where the underlying
+//! I²C controller traits move arbitrary byte streams across the bus, the
+//! SMBus traits encode the higher-level SMBus protocol transactions
+//! (quick command, send/receive byte, byte/word/block read/write, process
+//! calls) together with optional Packet Error Code (PEC) computation and
+//! verification.
+//!
+//! # PEC handling
+//!
+//! When an SMBus operation is invoked with `use_pec = true`, the
+//! implementation obtains a fresh PEC calculator from
+//! [`asynch::Smbus::get_pec_calc`] and feeds it the bytes that appear on
+//! the wire (address, register, payload, …) in bus order. The truncated
+//! low byte of [`core::hash::Hasher::finish`] is treated as the PEC.
+//!
+//! Implementations that do not support PEC return `None` from
+//! `get_pec_calc()`; any operation with `use_pec = true` then fails with
+//! [`ErrorKind::Pec`].
+//!
+//! # For driver authors
+//!
+//! Drivers should take an `Smbus` instance by value, not by `&mut`. The
+//! blanket impl for `&mut T` lets the user pass either, but owning the
+//! instance keeps the driver's API symmetric with the controller-side
+//! traits in [`embedded_hal_async::i2c`].
+//!
+//! # For HAL authors
+//!
+//! - Bus configuration (clocking, addressing, SMBus role) is a peripheral
+//!   concern handled at construction time. These traits deliberately
+//!   expose none of that — they only describe the protocol-level
+//!   transactions.
+//!
+//! - Block transfers are capped at 255 bytes per the SMBus specification;
+//!   exceeding this returns [`ErrorKind::TooLargeBlockTransaction`].
+//!
+//! - The SMBus slave timeout (35 ms) is reported as [`ErrorKind::Timeout`].
+//!
+//! [`embedded_hal_async::i2c`]:
+//! https://docs.rs/embedded-hal-async/1.0.0/embedded_hal_async/i2c/index.html
+
 pub mod asynch;
+
+/// Maximum payload size, in bytes, of a single SMBus block transfer.
+///
+/// The SMBus specification caps the `length` field of a block read or
+/// block write at one byte, so a single block transaction can carry at
+/// most 255 data bytes.
+pub(crate) const MAX_BLOCK_SIZE: usize = 255;
+
+/// Read-bit value OR-ed into the shifted address byte to mark a read.
+///
+/// The 8-bit address byte placed on the wire is `(address << 1) | rw`,
+/// where `rw` is `0` for a write and [`READ_BIT`] (`1`) for a read.
+pub(crate) const READ_BIT: u8 = 0x01;
+
+/// Compute the 8-bit write-address byte (`address << 1`) used on the wire.
+#[inline]
+pub(crate) const fn write_address_byte(address: u8) -> u8 {
+    address << 1
+}
+
+/// Compute the 8-bit read-address byte (`(address << 1) | READ_BIT`) used
+/// on the wire.
+#[inline]
+pub(crate) const fn read_address_byte(address: u8) -> u8 {
+    (address << 1) | READ_BIT
+}
 
 /// SMBus error.
 pub trait Error: core::fmt::Debug {

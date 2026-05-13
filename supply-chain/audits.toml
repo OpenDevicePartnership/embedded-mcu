@@ -17,6 +17,11 @@ criteria = "safe-to-deploy"
 version = "0.3.100"
 notes = "defmt-rtt is used for all our logging purposes."
 
+[[audits.embedded-hal-mock]]
+who = "matteotullo <matteotullo@microsoft.com>"
+criteria = "safe-to-run"
+delta = "0.8.0 -> 0.11.1"
+
 [[audits.embedded-mcu-hal]]
 who = "Felipe Balbi <felipe.balbi@microsoft.com>"
 criteria = "safe-to-deploy"

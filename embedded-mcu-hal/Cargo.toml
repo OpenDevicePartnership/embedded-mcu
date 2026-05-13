@@ -22,6 +22,11 @@ embedded-hal-async = "1.0.0"
 [dev-dependencies]
 proptest = "1.0.0"
 tokio = { version = "1", features = ["macros", "rt", "time"] }
+embedded-hal-mock = { version = "0.11", default-features = false, features = [
+    "eh1",
+    "embedded-hal-async",
+] }
+smbus-pec = { version = "1.0", default-features = false }
 
 [features]
 default = []
