@@ -19,7 +19,7 @@
 //!
 //! Conversion between [`Datetime`] and Unix timestamps (seconds since
 //! 1970-01-01 00:00:00, ignoring leap seconds) is provided by
-//! [`Datetime::timestamp`] and [`Datetime::from_timestamp`],
+//! [`Datetime::unix_timestamp`] and [`Datetime::from_unix_timestamp`],
 //! both of which are `const fn`.
 //!
 //! When the **`chrono`** Cargo feature is enabled, `TryFrom<chrono::NaiveDateTime>`
