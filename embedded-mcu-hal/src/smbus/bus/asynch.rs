@@ -74,7 +74,7 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         computed_pec
             .eq(&received_pec.into())
             .then_some(())
-            .ok_or_else(|| <Self as crate::smbus::bus::ErrorType>::Error::to_kind(crate::smbus::bus::ErrorKind::Pec))
+            .ok_or_else(|| <Self as crate::smbus::bus::ErrorType>::Error::from_kind(crate::smbus::bus::ErrorKind::Pec))
     }
 
     /// Quick Command.
@@ -85,19 +85,21 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Send Byte.
-    async fn send_byte(
+    async fn send_byte(&mut self, address: u8, byte: u8) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Send Byte with PEC.
+    async fn send_byte_with_pec(
         &mut self,
         address: u8,
         byte: u8,
-        use_pec: bool,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Receive Byte.
-    async fn receive_byte(
-        &mut self,
-        address: u8,
-        use_pec: bool,
-    ) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error>;
+    async fn receive_byte(&mut self, address: u8) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Receive Byte with PEC.
+    async fn receive_byte_with_pec(&mut self, address: u8)
+        -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Write Byte.
     async fn write_byte(
@@ -105,7 +107,14 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         address: u8,
         register: u8,
         byte: u8,
-        use_pec: bool,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Write Byte with PEC.
+    async fn write_byte_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        byte: u8,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Write Word (little-endian on the wire).
@@ -114,7 +123,14 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         address: u8,
         register: u8,
         word: u16,
-        use_pec: bool,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Write Word with PEC (little-endian on the wire).
+    async fn write_word_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        word: u16,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Read Byte.
@@ -122,7 +138,13 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         &mut self,
         address: u8,
         register: u8,
-        use_pec: bool,
+    ) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Read Byte with PEC.
+    async fn read_byte_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
     ) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Read Word (little-endian on the wire).
@@ -130,7 +152,13 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         &mut self,
         address: u8,
         register: u8,
-        use_pec: bool,
+    ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Read Word with PEC (little-endian on the wire).
+    async fn read_word_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
     ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Process Call.
@@ -139,7 +167,14 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         address: u8,
         register: u8,
         word: u16,
-        use_pec: bool,
+    ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Process Call with PEC.
+    async fn process_call_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        word: u16,
     ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Write.
@@ -148,7 +183,14 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         address: u8,
         register: u8,
         data: &[u8],
-        use_pec: bool,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Block Write with PEC.
+    async fn block_write_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        data: &[u8],
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Read.
@@ -157,7 +199,14 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         address: u8,
         register: u8,
         data: &mut [u8],
-        use_pec: bool,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Block Read with PEC.
+    async fn block_read_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        data: &mut [u8],
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Write / Block Read / Process Call.
@@ -167,7 +216,15 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
         register: u8,
         write_data: &[u8],
         read_data: &mut [u8],
-        use_pec: bool,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
+
+    /// Block Write / Block Read / Process Call with PEC.
+    async fn block_write_block_read_process_call_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        write_data: &[u8],
+        read_data: &mut [u8],
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 }
 
@@ -189,22 +246,30 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
     }
 
     #[inline]
-    async fn send_byte(
-        &mut self,
-        address: u8,
-        byte: u8,
-        use_pec: bool,
-    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::send_byte(*self, address, byte, use_pec).await
+    async fn send_byte(&mut self, address: u8, byte: u8) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::send_byte(*self, address, byte).await
     }
 
     #[inline]
-    async fn receive_byte(
+    async fn send_byte_with_pec(
         &mut self,
         address: u8,
-        use_pec: bool,
+        byte: u8,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::send_byte_with_pec(*self, address, byte).await
+    }
+
+    #[inline]
+    async fn receive_byte(&mut self, address: u8) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::receive_byte(*self, address).await
+    }
+
+    #[inline]
+    async fn receive_byte_with_pec(
+        &mut self,
+        address: u8,
     ) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::receive_byte(*self, address, use_pec).await
+        T::receive_byte_with_pec(*self, address).await
     }
 
     #[inline]
@@ -213,9 +278,18 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         address: u8,
         register: u8,
         byte: u8,
-        use_pec: bool,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::write_byte(*self, address, register, byte, use_pec).await
+        T::write_byte(*self, address, register, byte).await
+    }
+
+    #[inline]
+    async fn write_byte_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        byte: u8,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::write_byte_with_pec(*self, address, register, byte).await
     }
 
     #[inline]
@@ -224,9 +298,18 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         address: u8,
         register: u8,
         word: u16,
-        use_pec: bool,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::write_word(*self, address, register, word, use_pec).await
+        T::write_word(*self, address, register, word).await
+    }
+
+    #[inline]
+    async fn write_word_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        word: u16,
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::write_word_with_pec(*self, address, register, word).await
     }
 
     #[inline]
@@ -234,9 +317,17 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         &mut self,
         address: u8,
         register: u8,
-        use_pec: bool,
     ) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::read_byte(*self, address, register, use_pec).await
+        T::read_byte(*self, address, register).await
+    }
+
+    #[inline]
+    async fn read_byte_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+    ) -> Result<u8, <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::read_byte_with_pec(*self, address, register).await
     }
 
     #[inline]
@@ -244,9 +335,17 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         &mut self,
         address: u8,
         register: u8,
-        use_pec: bool,
     ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::read_word(*self, address, register, use_pec).await
+        T::read_word(*self, address, register).await
+    }
+
+    #[inline]
+    async fn read_word_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+    ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::read_word_with_pec(*self, address, register).await
     }
 
     #[inline]
@@ -255,9 +354,18 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         address: u8,
         register: u8,
         word: u16,
-        use_pec: bool,
     ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::process_call(*self, address, register, word, use_pec).await
+        T::process_call(*self, address, register, word).await
+    }
+
+    #[inline]
+    async fn process_call_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        word: u16,
+    ) -> Result<u16, <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::process_call_with_pec(*self, address, register, word).await
     }
 
     #[inline]
@@ -266,9 +374,18 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         address: u8,
         register: u8,
         data: &[u8],
-        use_pec: bool,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::block_write(*self, address, register, data, use_pec).await
+        T::block_write(*self, address, register, data).await
+    }
+
+    #[inline]
+    async fn block_write_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        data: &[u8],
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::block_write_with_pec(*self, address, register, data).await
     }
 
     #[inline]
@@ -277,9 +394,18 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         address: u8,
         register: u8,
         data: &mut [u8],
-        use_pec: bool,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::block_read(*self, address, register, data, use_pec).await
+        T::block_read(*self, address, register, data).await
+    }
+
+    #[inline]
+    async fn block_read_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        data: &mut [u8],
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::block_read_with_pec(*self, address, register, data).await
     }
 
     #[inline]
@@ -289,9 +415,19 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
         register: u8,
         write_data: &[u8],
         read_data: &mut [u8],
-        use_pec: bool,
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        T::block_write_block_read_process_call(*self, address, register, write_data, read_data, use_pec).await
+        T::block_write_block_read_process_call(*self, address, register, write_data, read_data).await
+    }
+
+    #[inline]
+    async fn block_write_block_read_process_call_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        write_data: &[u8],
+        read_data: &mut [u8],
+    ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
+        T::block_write_block_read_process_call_with_pec(*self, address, register, write_data, read_data).await
     }
 }
 
@@ -348,6 +484,16 @@ where
         Ok(pec)
     }
 
+    /// Obtain a fresh PEC calculator pre-fed with the read-address byte,
+    /// or [`ErrorKind::Pec`](crate::smbus::bus::ErrorKind::Pec) if the
+    /// provider returns `None`. Used by pure-read transactions (e.g.
+    /// Receive Byte) whose first wire byte is the read-direction address.
+    fn pec_calc_with_read_addr(address: u8) -> Result<P::Calc, crate::smbus::bus::ErrorKind> {
+        let mut pec = P::new_calc().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
+        pec.write_u8(crate::smbus::bus::read_address_byte(address));
+        Ok(pec)
+    }
+
     /// Truncate a finished PEC value to its low byte.
     fn finalize_pec_byte(pec: u64) -> Result<u8, crate::smbus::bus::ErrorKind> {
         pec.try_into().map_err(|_| crate::smbus::bus::ErrorKind::Pec)
@@ -387,6 +533,8 @@ where
     ///
     /// When `use_pec` is true, the caller must size `read` to include one
     /// extra trailing byte for the PEC byte; it is verified after the read.
+    /// The PEC is seeded with the read-direction address byte because this
+    /// helper drives a pure-read SMBus transaction (e.g. Receive Byte).
     async fn read_buf(
         &mut self,
         address: u8,
@@ -394,7 +542,7 @@ where
         read: &mut [u8],
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         if use_pec {
-            let mut pec = Self::pec_calc_with_write_addr(address)?;
+            let mut pec = Self::pec_calc_with_read_addr(address)?;
             self.i2c
                 .read(address, read)
                 .await
@@ -473,87 +621,76 @@ where
         Ok(())
     }
 
-    async fn send_byte(&mut self, address: u8, byte: u8, use_pec: bool) -> Result<(), crate::smbus::bus::ErrorKind> {
-        if use_pec {
-            self.write_buf(address, true, &mut [byte, 0]).await
-        } else {
-            self.write_buf(address, false, &mut [byte]).await
-        }
+    async fn send_byte(&mut self, address: u8, byte: u8) -> Result<(), crate::smbus::bus::ErrorKind> {
+        self.write_buf(address, false, &mut [byte]).await
     }
 
-    async fn receive_byte(&mut self, address: u8, use_pec: bool) -> Result<u8, crate::smbus::bus::ErrorKind> {
-        if use_pec {
-            let mut buf = [0u8; 2];
-            self.read_buf(address, true, &mut buf).await?;
-            Ok(buf[0])
-        } else {
-            let mut buf = [0u8; 1];
-            self.read_buf(address, false, &mut buf).await?;
-            Ok(buf[0])
-        }
+    async fn send_byte_with_pec(&mut self, address: u8, byte: u8) -> Result<(), crate::smbus::bus::ErrorKind> {
+        self.write_buf(address, true, &mut [byte, 0]).await
     }
 
-    async fn write_byte(
+    async fn receive_byte(&mut self, address: u8) -> Result<u8, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 1];
+        self.read_buf(address, false, &mut buf).await?;
+        Ok(buf[0])
+    }
+
+    async fn receive_byte_with_pec(&mut self, address: u8) -> Result<u8, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 2];
+        self.read_buf(address, true, &mut buf).await?;
+        Ok(buf[0])
+    }
+
+    async fn write_byte(&mut self, address: u8, register: u8, byte: u8) -> Result<(), crate::smbus::bus::ErrorKind> {
+        self.write_buf(address, false, &mut [register, byte]).await
+    }
+
+    async fn write_byte_with_pec(
         &mut self,
         address: u8,
         register: u8,
         byte: u8,
-        use_pec: bool,
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
-        if use_pec {
-            self.write_buf(address, true, &mut [register, byte, 0]).await
-        } else {
-            self.write_buf(address, false, &mut [register, byte]).await
-        }
+        self.write_buf(address, true, &mut [register, byte, 0]).await
     }
 
-    async fn write_word(
+    async fn write_word(&mut self, address: u8, register: u8, word: u16) -> Result<(), crate::smbus::bus::ErrorKind> {
+        let b = u16::to_le_bytes(word);
+        self.write_buf(address, false, &mut [register, b[0], b[1]]).await
+    }
+
+    async fn write_word_with_pec(
         &mut self,
         address: u8,
         register: u8,
         word: u16,
-        use_pec: bool,
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         let b = u16::to_le_bytes(word);
-        if use_pec {
-            self.write_buf(address, true, &mut [register, b[0], b[1], 0]).await
-        } else {
-            self.write_buf(address, false, &mut [register, b[0], b[1]]).await
-        }
+        self.write_buf(address, true, &mut [register, b[0], b[1], 0]).await
     }
 
-    async fn read_byte(
-        &mut self,
-        address: u8,
-        register: u8,
-        use_pec: bool,
-    ) -> Result<u8, crate::smbus::bus::ErrorKind> {
-        if use_pec {
-            let mut buf = [0u8; 2];
-            self.write_read_buf(address, true, &[register], &mut buf).await?;
-            Ok(buf[0])
-        } else {
-            let mut buf = [0u8; 1];
-            self.write_read_buf(address, false, &[register], &mut buf).await?;
-            Ok(buf[0])
-        }
+    async fn read_byte(&mut self, address: u8, register: u8) -> Result<u8, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 1];
+        self.write_read_buf(address, false, &[register], &mut buf).await?;
+        Ok(buf[0])
     }
 
-    async fn read_word(
-        &mut self,
-        address: u8,
-        register: u8,
-        use_pec: bool,
-    ) -> Result<u16, crate::smbus::bus::ErrorKind> {
-        if use_pec {
-            let mut buf = [0u8; 3];
-            self.write_read_buf(address, true, &[register], &mut buf).await?;
-            Ok(u16::from_le_bytes([buf[0], buf[1]]))
-        } else {
-            let mut buf = [0u8; 2];
-            self.write_read_buf(address, false, &[register], &mut buf).await?;
-            Ok(u16::from_le_bytes(buf))
-        }
+    async fn read_byte_with_pec(&mut self, address: u8, register: u8) -> Result<u8, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 2];
+        self.write_read_buf(address, true, &[register], &mut buf).await?;
+        Ok(buf[0])
+    }
+
+    async fn read_word(&mut self, address: u8, register: u8) -> Result<u16, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 2];
+        self.write_read_buf(address, false, &[register], &mut buf).await?;
+        Ok(u16::from_le_bytes(buf))
+    }
+
+    async fn read_word_with_pec(&mut self, address: u8, register: u8) -> Result<u16, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 3];
+        self.write_read_buf(address, true, &[register], &mut buf).await?;
+        Ok(u16::from_le_bytes([buf[0], buf[1]]))
     }
 
     async fn process_call(
@@ -561,44 +698,48 @@ where
         address: u8,
         register: u8,
         word: u16,
-        use_pec: bool,
     ) -> Result<u16, crate::smbus::bus::ErrorKind> {
-        if use_pec {
-            let mut buf = [0u8; 3];
-            let mut pec = Self::pec_calc_with_write_addr(address)?;
-            pec.write_u8(register);
-            pec.write_u16(word);
-            pec.write_u8(crate::smbus::bus::read_address_byte(address));
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Write(&word.to_le_bytes()),
-                        Operation::Read(&mut buf),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
-            let (recvd_pec, data) = buf.split_last().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
-            pec.write(data);
-            Self::check_pec(*recvd_pec, pec.finish())?;
-            Ok(u16::from_le_bytes([buf[0], buf[1]]))
-        } else {
-            let mut buf = [0u8; 2];
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Write(&word.to_le_bytes()),
-                        Operation::Read(&mut buf),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
-            Ok(u16::from_le_bytes(buf))
-        }
+        let mut buf = [0u8; 2];
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Write(&word.to_le_bytes()),
+                    Operation::Read(&mut buf),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        Ok(u16::from_le_bytes(buf))
+    }
+
+    async fn process_call_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        word: u16,
+    ) -> Result<u16, crate::smbus::bus::ErrorKind> {
+        let mut buf = [0u8; 3];
+        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        pec.write_u8(register);
+        pec.write(&word.to_le_bytes());
+        pec.write_u8(crate::smbus::bus::read_address_byte(address));
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Write(&word.to_le_bytes()),
+                    Operation::Read(&mut buf),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        let (recvd_pec, data) = buf.split_last().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
+        pec.write(data);
+        Self::check_pec(*recvd_pec, pec.finish())?;
+        Ok(u16::from_le_bytes([buf[0], buf[1]]))
     }
 
     async fn block_write(
@@ -606,42 +747,50 @@ where
         address: u8,
         register: u8,
         data: &[u8],
-        use_pec: bool,
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         if data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
             return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
         }
-        if use_pec {
-            let mut pec = Self::pec_calc_with_write_addr(address)?;
-            pec.write_u8(register);
-            pec.write_u8(data.len() as u8);
-            pec.write(data);
-            let pec: u8 = Self::finalize_pec_byte(pec.finish())?;
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Write(&[data.len() as u8]),
-                        Operation::Write(data),
-                        Operation::Write(&[pec]),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
-        } else {
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Write(&[data.len() as u8]),
-                        Operation::Write(data),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Write(&[data.len() as u8]),
+                    Operation::Write(data),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        Ok(())
+    }
+
+    async fn block_write_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        data: &[u8],
+    ) -> Result<(), crate::smbus::bus::ErrorKind> {
+        if data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
+            return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
         }
+        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        pec.write_u8(register);
+        pec.write_u8(data.len() as u8);
+        pec.write(data);
+        let pec: u8 = Self::finalize_pec_byte(pec.finish())?;
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Write(&[data.len() as u8]),
+                    Operation::Write(data),
+                    Operation::Write(&[pec]),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
         Ok(())
     }
 
@@ -650,45 +799,60 @@ where
         address: u8,
         register: u8,
         data: &mut [u8],
-        use_pec: bool,
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         if data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
             return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
         }
         let mut msg_size = [0u8];
-        if use_pec {
-            let mut pec_buf = [0u8];
-            let mut pec = Self::pec_calc_with_write_addr(address)?;
-            pec.write_u8(register);
-            pec.write_u8(crate::smbus::bus::read_address_byte(address));
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Read(&mut msg_size),
-                        Operation::Read(data),
-                        Operation::Read(&mut pec_buf),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
-            pec.write(&msg_size);
-            pec.write(data);
-            Self::check_pec(pec_buf[0], pec.finish())?;
-        } else {
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Read(&mut msg_size),
-                        Operation::Read(data),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Read(&mut msg_size),
+                    Operation::Read(data),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        if usize::from(msg_size[0]) != data.len() {
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
         }
+        Ok(())
+    }
+
+    async fn block_read_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        data: &mut [u8],
+    ) -> Result<(), crate::smbus::bus::ErrorKind> {
+        if data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
+            return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
+        }
+        let mut msg_size = [0u8];
+        let mut pec_buf = [0u8];
+        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        pec.write_u8(register);
+        pec.write_u8(crate::smbus::bus::read_address_byte(address));
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Read(&mut msg_size),
+                    Operation::Read(data),
+                    Operation::Read(&mut pec_buf),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        if usize::from(msg_size[0]) != data.len() {
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
+        }
+        pec.write(&msg_size);
+        pec.write(data);
+        Self::check_pec(pec_buf[0], pec.finish())?;
         Ok(())
     }
 
@@ -698,51 +862,67 @@ where
         register: u8,
         write_data: &[u8],
         read_data: &mut [u8],
-        use_pec: bool,
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         if write_data.len() + read_data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
             return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
         }
         let mut read_msg_size = [0u8];
-        if use_pec {
-            let mut pec_buf = [0u8];
-            let mut pec = Self::pec_calc_with_write_addr(address)?;
-            pec.write_u8(register);
-            pec.write_u8(write_data.len() as u8);
-            pec.write(write_data);
-            pec.write_u8(crate::smbus::bus::read_address_byte(address));
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Write(&[write_data.len() as u8]),
-                        Operation::Write(write_data),
-                        Operation::Read(&mut read_msg_size),
-                        Operation::Read(read_data),
-                        Operation::Read(&mut pec_buf),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
-            pec.write(&read_msg_size);
-            pec.write(read_data);
-            Self::check_pec(pec_buf[0], pec.finish())?;
-        } else {
-            self.i2c
-                .transaction(
-                    address,
-                    &mut [
-                        Operation::Write(&[register]),
-                        Operation::Write(&[write_data.len() as u8]),
-                        Operation::Write(write_data),
-                        Operation::Read(&mut read_msg_size),
-                        Operation::Read(read_data),
-                    ],
-                )
-                .await
-                .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Write(&[write_data.len() as u8]),
+                    Operation::Write(write_data),
+                    Operation::Read(&mut read_msg_size),
+                    Operation::Read(read_data),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        if usize::from(read_msg_size[0]) != read_data.len() {
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
         }
+        Ok(())
+    }
+
+    async fn block_write_block_read_process_call_with_pec(
+        &mut self,
+        address: u8,
+        register: u8,
+        write_data: &[u8],
+        read_data: &mut [u8],
+    ) -> Result<(), crate::smbus::bus::ErrorKind> {
+        if write_data.len() + read_data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
+            return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
+        }
+        let mut read_msg_size = [0u8];
+        let mut pec_buf = [0u8];
+        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        pec.write_u8(register);
+        pec.write_u8(write_data.len() as u8);
+        pec.write(write_data);
+        pec.write_u8(crate::smbus::bus::read_address_byte(address));
+        self.i2c
+            .transaction(
+                address,
+                &mut [
+                    Operation::Write(&[register]),
+                    Operation::Write(&[write_data.len() as u8]),
+                    Operation::Write(write_data),
+                    Operation::Read(&mut read_msg_size),
+                    Operation::Read(read_data),
+                    Operation::Read(&mut pec_buf),
+                ],
+            )
+            .await
+            .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
+        if usize::from(read_msg_size[0]) != read_data.len() {
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
+        }
+        pec.write(&read_msg_size);
+        pec.write(read_data);
+        Self::check_pec(pec_buf[0], pec.finish())?;
         Ok(())
     }
 }
@@ -820,6 +1000,7 @@ mod tests {
             ErrorKind::Timeout,
             ErrorKind::Pec,
             ErrorKind::TooLargeBlockTransaction,
+            ErrorKind::BlockSizeMismatch,
             ErrorKind::Other,
         ] {
             let s = std::format!("{}", k);
@@ -892,7 +1073,7 @@ mod tests {
     #[tokio::test]
     async fn read_buf_pec() {
         let data = 0x11u8;
-        let pec = expected_pec(&[&[write_address_byte(ADDR)], &[data]]);
+        let pec = expected_pec(&[&[read_address_byte(ADDR)], &[data]]);
         let mut bus = new_bus(&[Tx::read(ADDR, std::vec![data, pec])]);
         let mut buf = [0u8; 2];
         bus.read_buf(ADDR, true, &mut buf).await.unwrap();
@@ -937,7 +1118,7 @@ mod tests {
     #[tokio::test]
     async fn send_byte_no_pec() {
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![0x55])]);
-        bus.send_byte(ADDR, 0x55, false).await.unwrap();
+        bus.send_byte(ADDR, 0x55).await.unwrap();
         done(bus);
     }
 
@@ -945,14 +1126,14 @@ mod tests {
     async fn send_byte_pec() {
         let pec = expected_pec(&[&[write_address_byte(ADDR), 0x55]]);
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![0x55, pec])]);
-        bus.send_byte(ADDR, 0x55, true).await.unwrap();
+        bus.send_byte_with_pec(ADDR, 0x55).await.unwrap();
         done(bus);
     }
 
     #[tokio::test]
     async fn receive_byte_no_pec() {
         let mut bus = new_bus(&[Tx::read(ADDR, std::vec![0x99])]);
-        let b = bus.receive_byte(ADDR, false).await.unwrap();
+        let b = bus.receive_byte(ADDR).await.unwrap();
         assert_eq!(b, 0x99);
         done(bus);
     }
@@ -960,9 +1141,9 @@ mod tests {
     #[tokio::test]
     async fn receive_byte_pec() {
         let data = 0x99u8;
-        let pec = expected_pec(&[&[write_address_byte(ADDR), data]]);
+        let pec = expected_pec(&[&[read_address_byte(ADDR), data]]);
         let mut bus = new_bus(&[Tx::read(ADDR, std::vec![data, pec])]);
-        let b = bus.receive_byte(ADDR, true).await.unwrap();
+        let b = bus.receive_byte_with_pec(ADDR).await.unwrap();
         assert_eq!(b, data);
         done(bus);
     }
@@ -970,7 +1151,7 @@ mod tests {
     #[tokio::test]
     async fn receive_byte_pec_mismatch() {
         let mut bus = new_bus(&[Tx::read(ADDR, std::vec![0x99, 0xFF])]);
-        let err = bus.receive_byte(ADDR, true).await.unwrap_err();
+        let err = bus.receive_byte_with_pec(ADDR).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
         done(bus);
     }
@@ -980,7 +1161,7 @@ mod tests {
     #[tokio::test]
     async fn write_byte_no_pec() {
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![REG, 0x33])]);
-        bus.write_byte(ADDR, REG, 0x33, false).await.unwrap();
+        bus.write_byte(ADDR, REG, 0x33).await.unwrap();
         done(bus);
     }
 
@@ -988,7 +1169,7 @@ mod tests {
     async fn write_byte_pec() {
         let pec = expected_pec(&[&[write_address_byte(ADDR), REG, 0x33]]);
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![REG, 0x33, pec])]);
-        bus.write_byte(ADDR, REG, 0x33, true).await.unwrap();
+        bus.write_byte_with_pec(ADDR, REG, 0x33).await.unwrap();
         done(bus);
     }
 
@@ -997,7 +1178,7 @@ mod tests {
         let word: u16 = 0xBEEF;
         let bytes = word.to_le_bytes();
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![REG, bytes[0], bytes[1]])]);
-        bus.write_word(ADDR, REG, word, false).await.unwrap();
+        bus.write_word(ADDR, REG, word).await.unwrap();
         done(bus);
     }
 
@@ -1007,7 +1188,7 @@ mod tests {
         let bytes = word.to_le_bytes();
         let pec = expected_pec(&[&[write_address_byte(ADDR), REG, bytes[0], bytes[1]]]);
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![REG, bytes[0], bytes[1], pec])]);
-        bus.write_word(ADDR, REG, word, true).await.unwrap();
+        bus.write_word_with_pec(ADDR, REG, word).await.unwrap();
         done(bus);
     }
 
@@ -1021,7 +1202,7 @@ mod tests {
             Tx::read(ADDR, std::vec![0x77]),
             Tx::transaction_end(ADDR),
         ]);
-        let b = bus.read_byte(ADDR, REG, false).await.unwrap();
+        let b = bus.read_byte(ADDR, REG).await.unwrap();
         assert_eq!(b, 0x77);
         done(bus);
     }
@@ -1036,7 +1217,7 @@ mod tests {
             Tx::read(ADDR, std::vec![data, pec]),
             Tx::transaction_end(ADDR),
         ]);
-        let b = bus.read_byte(ADDR, REG, true).await.unwrap();
+        let b = bus.read_byte_with_pec(ADDR, REG).await.unwrap();
         assert_eq!(b, data);
         done(bus);
     }
@@ -1049,7 +1230,7 @@ mod tests {
             Tx::read(ADDR, std::vec![0x77, 0xFF]),
             Tx::transaction_end(ADDR),
         ]);
-        let err = bus.read_byte(ADDR, REG, true).await.unwrap_err();
+        let err = bus.read_byte_with_pec(ADDR, REG).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
         done(bus);
     }
@@ -1064,7 +1245,7 @@ mod tests {
             Tx::read(ADDR, std::vec![lo, hi]),
             Tx::transaction_end(ADDR),
         ]);
-        let w = bus.read_word(ADDR, REG, false).await.unwrap();
+        let w = bus.read_word(ADDR, REG).await.unwrap();
         assert_eq!(w, u16::from_le_bytes([lo, hi]));
         done(bus);
     }
@@ -1080,7 +1261,7 @@ mod tests {
             Tx::read(ADDR, std::vec![lo, hi, pec]),
             Tx::transaction_end(ADDR),
         ]);
-        let w = bus.read_word(ADDR, REG, true).await.unwrap();
+        let w = bus.read_word_with_pec(ADDR, REG).await.unwrap();
         assert_eq!(w, u16::from_le_bytes([lo, hi]));
         done(bus);
     }
@@ -1099,7 +1280,7 @@ mod tests {
             Tx::read(ADDR, std::vec![resp_lo, resp_hi]),
             Tx::transaction_end(ADDR),
         ]);
-        let r = bus.process_call(ADDR, REG, word, false).await.unwrap();
+        let r = bus.process_call(ADDR, REG, word).await.unwrap();
         assert_eq!(r, u16::from_le_bytes([resp_lo, resp_hi]));
         done(bus);
     }
@@ -1112,7 +1293,7 @@ mod tests {
         let mut hasher = Pec::new();
         hasher.write_u8(write_address_byte(ADDR));
         hasher.write_u8(REG);
-        hasher.write_u16(word);
+        hasher.write(&word.to_le_bytes());
         hasher.write_u8(read_address_byte(ADDR));
         hasher.write(&[resp_lo, resp_hi]);
         let pec = hasher.finish() as u8;
@@ -1123,7 +1304,7 @@ mod tests {
             Tx::read(ADDR, std::vec![resp_lo, resp_hi, pec]),
             Tx::transaction_end(ADDR),
         ]);
-        let r = bus.process_call(ADDR, REG, word, true).await.unwrap();
+        let r = bus.process_call_with_pec(ADDR, REG, word).await.unwrap();
         assert_eq!(r, u16::from_le_bytes([resp_lo, resp_hi]));
         done(bus);
     }
@@ -1140,7 +1321,7 @@ mod tests {
             Tx::write(ADDR, data.to_vec()),
             Tx::transaction_end(ADDR),
         ]);
-        bus.block_write(ADDR, REG, &data, false).await.unwrap();
+        bus.block_write(ADDR, REG, &data).await.unwrap();
         done(bus);
     }
 
@@ -1156,7 +1337,7 @@ mod tests {
             Tx::write(ADDR, std::vec![pec]),
             Tx::transaction_end(ADDR),
         ]);
-        bus.block_write(ADDR, REG, &data, true).await.unwrap();
+        bus.block_write_with_pec(ADDR, REG, &data).await.unwrap();
         done(bus);
     }
 
@@ -1164,7 +1345,7 @@ mod tests {
     async fn block_write_too_large() {
         let mut bus = new_bus(&[]);
         let data = std::vec![0u8; MAX_BLOCK_SIZE + 1];
-        let err = bus.block_write(ADDR, REG, &data, false).await.unwrap_err();
+        let err = bus.block_write(ADDR, REG, &data).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::TooLargeBlockTransaction);
         done(bus);
     }
@@ -1181,7 +1362,7 @@ mod tests {
             Tx::read(ADDR, std::vec![0x10, 0x20, 0x30]),
             Tx::transaction_end(ADDR),
         ]);
-        bus.block_read(ADDR, REG, &mut buf, false).await.unwrap();
+        bus.block_read(ADDR, REG, &mut buf).await.unwrap();
         assert_eq!(buf, [0x10, 0x20, 0x30]);
         done(bus);
     }
@@ -1207,7 +1388,7 @@ mod tests {
             Tx::read(ADDR, std::vec![pec]),
             Tx::transaction_end(ADDR),
         ]);
-        bus.block_read(ADDR, REG, &mut buf, true).await.unwrap();
+        bus.block_read_with_pec(ADDR, REG, &mut buf).await.unwrap();
         assert_eq!(buf, payload);
         done(bus);
     }
@@ -1216,8 +1397,43 @@ mod tests {
     async fn block_read_too_large() {
         let mut bus = new_bus(&[]);
         let mut buf = std::vec![0u8; MAX_BLOCK_SIZE + 1];
-        let err = bus.block_read(ADDR, REG, &mut buf, false).await.unwrap_err();
+        let err = bus.block_read(ADDR, REG, &mut buf).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::TooLargeBlockTransaction);
+        done(bus);
+    }
+
+    #[tokio::test]
+    async fn block_read_size_mismatch_no_pec() {
+        // Device reports `2` but the caller expected `3`.
+        let mut buf = [0u8; 3];
+        let mut bus = new_bus(&[
+            Tx::transaction_start(ADDR),
+            Tx::write(ADDR, std::vec![REG]),
+            Tx::read(ADDR, std::vec![2]),
+            Tx::read(ADDR, std::vec![0x10, 0x20, 0x30]),
+            Tx::transaction_end(ADDR),
+        ]);
+        let err = bus.block_read(ADDR, REG, &mut buf).await.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
+        done(bus);
+    }
+
+    #[tokio::test]
+    async fn block_read_size_mismatch_pec() {
+        // Device reports `2` but the caller expected `3`. The mismatch must be
+        // reported as `BlockSizeMismatch` rather than `Pec`, even though the
+        // received PEC byte would not match either.
+        let mut buf = [0u8; 3];
+        let mut bus = new_bus(&[
+            Tx::transaction_start(ADDR),
+            Tx::write(ADDR, std::vec![REG]),
+            Tx::read(ADDR, std::vec![2]),
+            Tx::read(ADDR, std::vec![0x10, 0x20, 0x30]),
+            Tx::read(ADDR, std::vec![0x00]),
+            Tx::transaction_end(ADDR),
+        ]);
+        let err = bus.block_read_with_pec(ADDR, REG, &mut buf).await.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
         done(bus);
     }
 
@@ -1237,7 +1453,7 @@ mod tests {
             Tx::read(ADDR, read_payload.to_vec()),
             Tx::transaction_end(ADDR),
         ]);
-        bus.block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf, false)
+        bus.block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf)
             .await
             .unwrap();
         assert_eq!(read_buf, read_payload);
@@ -1268,7 +1484,7 @@ mod tests {
             Tx::read(ADDR, std::vec![pec]),
             Tx::transaction_end(ADDR),
         ]);
-        bus.block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf, true)
+        bus.block_write_block_read_process_call_with_pec(ADDR, REG, &write_data, &mut read_buf)
             .await
             .unwrap();
         assert_eq!(read_buf, read_payload);
@@ -1281,10 +1497,56 @@ mod tests {
         let write_data = std::vec![0u8; 200];
         let mut read_buf = std::vec![0u8; 60]; // 200 + 60 > 255
         let err = bus
-            .block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf, false)
+            .block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf)
             .await
             .unwrap_err();
         assert_eq!(err.kind(), ErrorKind::TooLargeBlockTransaction);
+        done(bus);
+    }
+
+    #[tokio::test]
+    async fn bwbr_size_mismatch_no_pec() {
+        let write_data = [0x01u8, 0x02];
+        let mut read_buf = [0u8; 2];
+        // Device returns count `1` but caller expected `2`.
+        let mut bus = new_bus(&[
+            Tx::transaction_start(ADDR),
+            Tx::write(ADDR, std::vec![REG]),
+            Tx::write(ADDR, std::vec![write_data.len() as u8]),
+            Tx::write(ADDR, write_data.to_vec()),
+            Tx::read(ADDR, std::vec![1]),
+            Tx::read(ADDR, std::vec![0xAA, 0xBB]),
+            Tx::transaction_end(ADDR),
+        ]);
+        let err = bus
+            .block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf)
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
+        done(bus);
+    }
+
+    #[tokio::test]
+    async fn bwbr_size_mismatch_pec() {
+        let write_data = [0x01u8, 0x02];
+        let mut read_buf = [0u8; 2];
+        // Device returns count `1` but caller expected `2`. Must be reported
+        // as `BlockSizeMismatch` rather than `Pec`.
+        let mut bus = new_bus(&[
+            Tx::transaction_start(ADDR),
+            Tx::write(ADDR, std::vec![REG]),
+            Tx::write(ADDR, std::vec![write_data.len() as u8]),
+            Tx::write(ADDR, write_data.to_vec()),
+            Tx::read(ADDR, std::vec![1]),
+            Tx::read(ADDR, std::vec![0xAA, 0xBB]),
+            Tx::read(ADDR, std::vec![0x00]),
+            Tx::transaction_end(ADDR),
+        ]);
+        let err = bus
+            .block_write_block_read_process_call_with_pec(ADDR, REG, &write_data, &mut read_buf)
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
         done(bus);
     }
 
@@ -1317,10 +1579,10 @@ mod tests {
             Tx::read(ADDR, std::vec![0x77]),
             Tx::transaction_end(ADDR),
         ]);
-        bus.send_byte(ADDR, 0x55, false).await.unwrap();
-        assert_eq!(bus.receive_byte(ADDR, false).await.unwrap(), 0x99);
-        bus.write_byte(ADDR, REG, 0x33, false).await.unwrap();
-        assert_eq!(bus.read_byte(ADDR, REG, false).await.unwrap(), 0x77);
+        bus.send_byte(ADDR, 0x55).await.unwrap();
+        assert_eq!(bus.receive_byte(ADDR).await.unwrap(), 0x99);
+        bus.write_byte(ADDR, REG, 0x33).await.unwrap();
+        assert_eq!(bus.read_byte(ADDR, REG).await.unwrap(), 0x77);
         done_no_pec(bus);
     }
 
@@ -1328,23 +1590,23 @@ mod tests {
     async fn pec_unavailable_returns_pec_error() {
         let mut bus = super::SwSmbusI2c::<I2cMock, NoPec>::new(I2cMock::new(&[]));
         // Any PEC-requiring path should fail without touching the bus.
-        let err = bus.send_byte(ADDR, 0x55, true).await.unwrap_err();
+        let err = bus.send_byte_with_pec(ADDR, 0x55).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
-        let err = bus.receive_byte(ADDR, true).await.unwrap_err();
+        let err = bus.receive_byte_with_pec(ADDR).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
-        let err = bus.read_byte(ADDR, REG, true).await.unwrap_err();
+        let err = bus.read_byte_with_pec(ADDR, REG).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
-        let err = bus.read_word(ADDR, REG, true).await.unwrap_err();
+        let err = bus.read_word_with_pec(ADDR, REG).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
-        let err = bus.process_call(ADDR, REG, 0, true).await.unwrap_err();
+        let err = bus.process_call_with_pec(ADDR, REG, 0).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
-        let err = bus.block_write(ADDR, REG, &[1, 2], true).await.unwrap_err();
+        let err = bus.block_write_with_pec(ADDR, REG, &[1, 2]).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
         let mut rb = [0u8; 2];
-        let err = bus.block_read(ADDR, REG, &mut rb, true).await.unwrap_err();
+        let err = bus.block_read_with_pec(ADDR, REG, &mut rb).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
         let err = bus
-            .block_write_block_read_process_call(ADDR, REG, &[1], &mut rb, true)
+            .block_write_block_read_process_call_with_pec(ADDR, REG, &[1], &mut rb)
             .await
             .unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Pec);
@@ -1357,7 +1619,7 @@ mod tests {
     async fn mut_ref_smbus_forwards() {
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![0x55])]);
         let r: &mut TestBus = &mut bus;
-        r.send_byte(ADDR, 0x55, false).await.unwrap();
+        r.send_byte(ADDR, 0x55).await.unwrap();
         assert!(<&mut TestBus as Smbus>::get_pec_calc().is_some());
         done(bus);
     }
@@ -1367,7 +1629,7 @@ mod tests {
     #[tokio::test]
     async fn i2c_error_propagates() {
         let mut bus = new_bus(&[Tx::write(ADDR, std::vec![0x55]).with_error(I2cErrorKind::Bus)]);
-        let err = bus.send_byte(ADDR, 0x55, false).await.unwrap_err();
+        let err = bus.send_byte(ADDR, 0x55).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::I2c(I2cErrorKind::Bus));
         done(bus);
     }

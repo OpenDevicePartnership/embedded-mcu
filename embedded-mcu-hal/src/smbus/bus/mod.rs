@@ -75,11 +75,11 @@ pub trait Error: core::fmt::Debug {
     /// Convert error to a generic SMBus error kind.
     ///
     /// By using this method, SMBus errors freely defined by HAL implementations
-    /// can be converted to a set of generic I2C errors upon which generic
+    /// can be converted to a common set of SMBus errors upon which generic
     /// code can act.
     fn kind(&self) -> ErrorKind;
-    /// Convert error to a generic SMBus error kind.
-    fn to_kind(kind: ErrorKind) -> Self;
+    /// Construct an error from a generic SMBus error kind.
+    fn from_kind(kind: ErrorKind) -> Self;
 }
 
 impl Error for core::convert::Infallible {
@@ -88,9 +88,13 @@ impl Error for core::convert::Infallible {
         match *self {}
     }
     #[inline]
-    #[allow(clippy::unreachable)]
-    fn to_kind(_kind: ErrorKind) -> Self {
-        unreachable!()
+    fn from_kind(_kind: ErrorKind) -> Self {
+        // `Infallible` is uninhabited, so this function can never actually
+        // be called
+        #[allow(clippy::unreachable)]
+        {
+            unreachable!()
+        }
     }
 }
 
@@ -111,6 +115,9 @@ pub enum ErrorKind {
     Pec,
     /// Block read/write too large transfer, at most 255 bytes can be read/written at once.
     TooLargeBlockTransaction,
+    /// Block read returned a byte count that did not match the caller's
+    /// expected buffer length.
+    BlockSizeMismatch,
     /// A different error occurred. The original error may contain more information.
     Other,
 }
@@ -127,7 +134,7 @@ impl Error for ErrorKind {
         *self
     }
     #[inline]
-    fn to_kind(kind: ErrorKind) -> Self {
+    fn from_kind(kind: ErrorKind) -> Self {
         kind
     }
 }
@@ -143,6 +150,10 @@ impl core::fmt::Display for ErrorKind {
                 f,
                 "Block read/write transfer size too large, at most 255 bytes can be read/written at once."
             ),
+            Self::BlockSizeMismatch => write!(
+                f,
+                "Block read returned a byte count that did not match the caller's expected buffer length."
+            ),
             Self::Other => write!(
                 f,
                 "A different error occurred. The original error may contain more information"
@@ -151,7 +162,7 @@ impl core::fmt::Display for ErrorKind {
     }
 }
 
-/// I2C error type trait.
+/// SMBus error type trait.
 ///
 /// This just defines the error type, to be used by the other traits.
 pub trait ErrorType {

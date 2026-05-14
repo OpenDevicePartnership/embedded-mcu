@@ -17,9 +17,14 @@
 //! * **Device-agnostic** — no register addresses, magic values, or
 //!   MCU-specific types appear in any public API.
 //!
-//! * **Trait-only** — the crate ships no runtime code beyond the
-//!   [`time::Datetime`] value type and its helpers.  Keeping implementations
-//!   out-of-crate means zero overhead: you only pay for what you use.
+//! * **Mostly trait-only** — the crate is primarily a contract surface,
+//!   not a runtime. The only concrete runtime code shipped today is the
+//!   [`time::Datetime`] value type and its helpers, and a portable software
+//!   SMBus controller ([`smbus::bus::asynch::SwSmbusI2c`]) that layers the
+//!   SMBus protocol on top of any [`embedded_hal_async::i2c::I2c`]
+//!   implementation. Hardware-specific implementations of every trait
+//!   still belong in board or chip support crates, so generic drivers pay
+//!   only for what they use.
 //!
 //! * **`no_std` first** — every public item is usable in bare-metal firmware
 //!   with no heap allocator.  The standard library is only linked during
@@ -45,6 +50,7 @@
 //! |--------|----------------|
 //! | [`time`] | Wall-clock date/time types and real-time clock (RTC) traits |
 //! | [`nvram`] | Non-Volatile RAM storage traits |
+//! | [`smbus`] | SMBus controller traits and a portable software implementation atop `embedded-hal-async` I²C |
 //! | [`watchdog`] | Watchdog timer trait |
 //!
 //! # Optional Cargo features
