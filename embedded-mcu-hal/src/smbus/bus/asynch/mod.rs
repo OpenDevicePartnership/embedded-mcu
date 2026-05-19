@@ -194,6 +194,12 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Read.
+    ///
+    /// The `data` slice must be sized to exactly match the number of bytes
+    /// the peripheral is expected to send back. The implementation reads
+    /// the device-reported byte count and rejects the transfer with
+    /// [`ErrorKind::BlockSizeMismatch`](crate::smbus::bus::ErrorKind::BlockSizeMismatch)
+    /// if it does not equal `data.len()`.
     async fn block_read(
         &mut self,
         address: u8,
@@ -202,6 +208,13 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Read with PEC.
+    ///
+    /// The `data` slice must be sized to exactly match the number of bytes
+    /// the peripheral is expected to send back. The implementation reads
+    /// the device-reported byte count and rejects the transfer with
+    /// [`ErrorKind::BlockSizeMismatch`](crate::smbus::bus::ErrorKind::BlockSizeMismatch)
+    /// if it does not equal `data.len()`. The size check runs before PEC
+    /// verification.
     async fn block_read_with_pec(
         &mut self,
         address: u8,
@@ -210,6 +223,12 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Write / Block Read / Process Call.
+    ///
+    /// The `read_data` slice must be sized to exactly match the number of
+    /// bytes the peripheral is expected to send back. The implementation
+    /// reads the device-reported byte count and rejects the transfer with
+    /// [`ErrorKind::BlockSizeMismatch`](crate::smbus::bus::ErrorKind::BlockSizeMismatch)
+    /// if it does not equal `read_data.len()`.
     async fn block_write_block_read_process_call(
         &mut self,
         address: u8,
@@ -219,6 +238,13 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
     ) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error>;
 
     /// Block Write / Block Read / Process Call with PEC.
+    ///
+    /// The `read_data` slice must be sized to exactly match the number of
+    /// bytes the peripheral is expected to send back. The implementation
+    /// reads the device-reported byte count and rejects the transfer with
+    /// [`ErrorKind::BlockSizeMismatch`](crate::smbus::bus::ErrorKind::BlockSizeMismatch)
+    /// if it does not equal `read_data.len()`. The size check runs before
+    /// PEC verification.
     async fn block_write_block_read_process_call_with_pec(
         &mut self,
         address: u8,
@@ -816,7 +842,10 @@ where
             .await
             .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
         if usize::from(msg_size[0]) != data.len() {
-            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch(
+                usize::from(msg_size[0]),
+                data.len(),
+            ));
         }
         Ok(())
     }
@@ -848,7 +877,10 @@ where
             .await
             .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
         if usize::from(msg_size[0]) != data.len() {
-            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch(
+                usize::from(msg_size[0]),
+                data.len(),
+            ));
         }
         pec.write(&msg_size);
         pec.write(data);
@@ -881,7 +913,10 @@ where
             .await
             .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
         if usize::from(read_msg_size[0]) != read_data.len() {
-            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch(
+                usize::from(read_msg_size[0]),
+                read_data.len(),
+            ));
         }
         Ok(())
     }
@@ -918,7 +953,10 @@ where
             .await
             .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
         if usize::from(read_msg_size[0]) != read_data.len() {
-            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch);
+            return Err(crate::smbus::bus::ErrorKind::BlockSizeMismatch(
+                usize::from(read_msg_size[0]),
+                read_data.len(),
+            ));
         }
         pec.write(&read_msg_size);
         pec.write(read_data);

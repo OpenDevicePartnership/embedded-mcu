@@ -69,12 +69,17 @@ fn error_kind_display_and_kind() {
         ErrorKind::Timeout,
         ErrorKind::Pec,
         ErrorKind::TooLargeBlockTransaction,
-        ErrorKind::BlockSizeMismatch,
+        ErrorKind::BlockSizeMismatch(2, 3),
         ErrorKind::Other,
     ] {
         let s = std::format!("{}", k);
         assert!(!s.is_empty());
     }
+    // The Display impl for `BlockSizeMismatch` must surface both the
+    // received byte count and the caller's expected buffer length.
+    let s = std::format!("{}", ErrorKind::BlockSizeMismatch(2, 5));
+    assert!(s.contains('2'));
+    assert!(s.contains('5'));
 }
 
 #[test]
@@ -483,7 +488,7 @@ async fn block_read_size_mismatch_no_pec() {
         Tx::transaction_end(ADDR),
     ]);
     let err = bus.block_read(ADDR, REG, &mut buf).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
+    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch(2, 3));
     done(bus);
 }
 
@@ -502,7 +507,7 @@ async fn block_read_size_mismatch_pec() {
         Tx::transaction_end(ADDR),
     ]);
     let err = bus.block_read_with_pec(ADDR, REG, &mut buf).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
+    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch(2, 3));
     done(bus);
 }
 
@@ -591,7 +596,7 @@ async fn bwbr_size_mismatch_no_pec() {
         .block_write_block_read_process_call(ADDR, REG, &write_data, &mut read_buf)
         .await
         .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
+    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch(1, 2));
     done(bus);
 }
 
@@ -615,7 +620,7 @@ async fn bwbr_size_mismatch_pec() {
         .block_write_block_read_process_call_with_pec(ADDR, REG, &write_data, &mut read_buf)
         .await
         .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch);
+    assert_eq!(err.kind(), ErrorKind::BlockSizeMismatch(1, 2));
     done(bus);
 }
 

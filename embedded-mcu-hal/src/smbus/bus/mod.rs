@@ -116,8 +116,8 @@ pub enum ErrorKind {
     /// Block read/write too large transfer, at most 255 bytes can be read/written at once.
     TooLargeBlockTransaction,
     /// Block read returned a byte count that did not match the caller's
-    /// expected buffer length.
-    BlockSizeMismatch,
+    /// expected buffer length. Format is (recvd byte count, buffer length).
+    BlockSizeMismatch(usize, usize),
     /// A different error occurred. The original error may contain more information.
     Other,
 }
@@ -150,9 +150,9 @@ impl core::fmt::Display for ErrorKind {
                 f,
                 "Block read/write transfer size too large, at most 255 bytes can be read/written at once."
             ),
-            Self::BlockSizeMismatch => write!(
+            Self::BlockSizeMismatch(byte_count, buf_len) => write!(
                 f,
-                "Block read returned a byte count that did not match the caller's expected buffer length."
+                "Block read returned a byte count ({byte_count}) that did not match the caller's expected buffer length ({buf_len})."
             ),
             Self::Other => write!(
                 f,
