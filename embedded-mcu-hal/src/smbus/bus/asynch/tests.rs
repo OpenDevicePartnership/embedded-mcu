@@ -20,26 +20,7 @@ fn expected_pec(parts: &[&[u8]]) -> u8 {
     pec(&buf)
 }
 
-/// PEC provider that exposes the `smbus-pec` calculator.
-struct TestPec;
-impl super::PecProvider for TestPec {
-    type Calc = Pec;
-    fn new_calc() -> Option<Self::Calc> {
-        Some(Pec::new())
-    }
-}
-
-/// PEC provider that reports PEC as unavailable.
-struct NoPec;
-impl super::PecProvider for NoPec {
-    type Calc = Pec;
-    fn new_calc() -> Option<Self::Calc> {
-        None
-    }
-}
-
-type TestBus = super::SwSmbusI2c<I2cMock, TestPec>;
-type NoPecBus = super::SwSmbusI2c<I2cMock, NoPec>;
+type TestBus = super::SwSmbusI2c<I2cMock>;
 
 fn new_bus(expectations: &[Tx]) -> TestBus {
     super::SwSmbusI2c::new(I2cMock::new(expectations))
@@ -68,6 +49,7 @@ fn error_kind_display_and_kind() {
         ErrorKind::I2c(I2cErrorKind::Bus),
         ErrorKind::Timeout,
         ErrorKind::Pec,
+        ErrorKind::PecNotAvailable,
         ErrorKind::TooLargeBlockTransaction,
         ErrorKind::BlockSizeMismatch(2, 3),
         ErrorKind::Other,
@@ -94,22 +76,6 @@ fn infallible_error_to_kind_round_trip() {
     fn _accepts<E: SmbusError>(_e: &E) {}
     let k = ErrorKind::Pec;
     _accepts(&k);
-}
-
-#[tokio::test]
-async fn check_pec_match() {
-    let bus = new_bus(&[]);
-    TestBus::check_pec(0x42, 0x42).unwrap();
-    TestBus::check_pec(0x00, 0x00).unwrap();
-    done(bus);
-}
-
-#[tokio::test]
-async fn check_pec_mismatch() {
-    let bus = new_bus(&[]);
-    let err = TestBus::check_pec(0x42, 0x43).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    done(bus);
 }
 
 // ---------- write_buf / read_buf (low-level) ----------
@@ -624,69 +590,6 @@ async fn bwbr_size_mismatch_pec() {
     done(bus);
 }
 
-// ---------- PEC unavailable ----------
-
-fn new_no_pec_bus(expectations: &[Tx]) -> NoPecBus {
-    super::SwSmbusI2c::new(I2cMock::new(expectations))
-}
-
-fn done_no_pec(mut bus: NoPecBus) {
-    bus.inner_mut().done();
-}
-
-#[test]
-fn no_pec_bus_get_pec_calc_returns_none() {
-    assert!(NoPecBus::get_pec_calc().is_none());
-}
-
-#[tokio::test]
-async fn no_pec_bus_non_pec_ops_still_work() {
-    // All `use_pec = false` paths must succeed even though `get_pec_calc`
-    // returns `None`: the trait must not consult the PEC calculator unless
-    // PEC was actually requested.
-    let mut bus = new_no_pec_bus(&[
-        Tx::write(ADDR, std::vec![0x55]),
-        Tx::read(ADDR, std::vec![0x99]),
-        Tx::write(ADDR, std::vec![REG, 0x33]),
-        Tx::transaction_start(ADDR),
-        Tx::write(ADDR, std::vec![REG]),
-        Tx::read(ADDR, std::vec![0x77]),
-        Tx::transaction_end(ADDR),
-    ]);
-    bus.send_byte(ADDR, 0x55).await.unwrap();
-    assert_eq!(bus.receive_byte(ADDR).await.unwrap(), 0x99);
-    bus.write_byte(ADDR, REG, 0x33).await.unwrap();
-    assert_eq!(bus.read_byte(ADDR, REG).await.unwrap(), 0x77);
-    done_no_pec(bus);
-}
-
-#[tokio::test]
-async fn pec_unavailable_returns_pec_error() {
-    let mut bus = super::SwSmbusI2c::<I2cMock, NoPec>::new(I2cMock::new(&[]));
-    // Any PEC-requiring path should fail without touching the bus.
-    let err = bus.send_byte_with_pec(ADDR, 0x55).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let err = bus.receive_byte_with_pec(ADDR).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let err = bus.read_byte_with_pec(ADDR, REG).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let err = bus.read_word_with_pec(ADDR, REG).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let err = bus.process_call_with_pec(ADDR, REG, 0).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let err = bus.block_write_with_pec(ADDR, REG, &[1, 2]).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let mut rb = [0u8; 2];
-    let err = bus.block_read_with_pec(ADDR, REG, &mut rb).await.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    let err = bus
-        .block_write_block_read_process_call_with_pec(ADDR, REG, &[1], &mut rb)
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Pec);
-    bus.inner_mut().done();
-}
-
 // ---------- &mut T forwarding ----------
 
 #[tokio::test]
@@ -694,8 +597,72 @@ async fn mut_ref_smbus_forwards() {
     let mut bus = new_bus(&[Tx::write(ADDR, std::vec![0x55])]);
     let r: &mut TestBus = &mut bus;
     r.send_byte(ADDR, 0x55).await.unwrap();
-    assert!(<&mut TestBus as Smbus>::get_pec_calc().is_some());
     done(bus);
+}
+
+// ---------- inner / into_inner accessors ----------
+
+#[tokio::test]
+async fn inner_accessors() {
+    let mut bus = new_bus(&[Tx::write(ADDR, std::vec![0x01])]);
+    // `inner` returns a shared reference; just touch it.
+    let _: &I2cMock = bus.inner();
+    bus.send_byte(ADDR, 0x01).await.unwrap();
+    // `into_inner` returns ownership of the wrapped bus; `done()` proves
+    // the same I2c mock is returned.
+    let mut inner = bus.into_inner();
+    inner.done();
+}
+
+// ---------- `*_with_pec` too-large guards ----------
+
+#[tokio::test]
+async fn block_write_with_pec_too_large() {
+    let mut bus = new_bus(&[]);
+    let data = std::vec![0u8; MAX_BLOCK_SIZE + 1];
+    let err = bus.block_write_with_pec(ADDR, REG, &data).await.unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::TooLargeBlockTransaction);
+    done(bus);
+}
+
+#[tokio::test]
+async fn block_read_with_pec_too_large() {
+    let mut bus = new_bus(&[]);
+    let mut buf = std::vec![0u8; MAX_BLOCK_SIZE + 1];
+    let err = bus.block_read_with_pec(ADDR, REG, &mut buf).await.unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::TooLargeBlockTransaction);
+    done(bus);
+}
+
+#[tokio::test]
+async fn bwbr_with_pec_too_large() {
+    let mut bus = new_bus(&[]);
+    let write_data = std::vec![0u8; 200];
+    let mut read_buf = std::vec![0u8; 60]; // 200 + 60 > 255
+    let err = bus
+        .block_write_block_read_process_call_with_pec(ADDR, REG, &write_data, &mut read_buf)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::TooLargeBlockTransaction);
+    done(bus);
+}
+
+// ---------- ErrorKind::from_kind round trip ----------
+
+#[test]
+fn error_kind_from_kind_round_trip() {
+    for k in [
+        ErrorKind::I2c(I2cErrorKind::Bus),
+        ErrorKind::Timeout,
+        ErrorKind::Pec,
+        ErrorKind::PecNotAvailable,
+        ErrorKind::TooLargeBlockTransaction,
+        ErrorKind::BlockSizeMismatch(1, 2),
+        ErrorKind::Other,
+    ] {
+        assert_eq!(<ErrorKind as SmbusError>::from_kind(k), k);
+        assert_eq!(<ErrorKind as SmbusError>::kind(&k), k);
+    }
 }
 
 // ---------- error propagation from underlying I2C ----------

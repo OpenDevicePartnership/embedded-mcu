@@ -10,15 +10,22 @@
 //!
 //! # PEC handling
 //!
-//! When an SMBus operation is invoked with `use_pec = true`, the
-//! implementation obtains a fresh PEC calculator from
-//! [`asynch::Smbus::get_pec_calc`] and feeds it the bytes that appear on
-//! the wire (address, register, payload, …) in bus order. The truncated
-//! low byte of [`core::hash::Hasher::finish`] is treated as the PEC.
+//! Every PEC-capable SMBus protocol transaction is exposed as two
+//! methods: a plain variant (e.g. [`asynch::Smbus::write_byte`]) that
+//! issues the transaction with no PEC byte on the wire, and a
+//! `*_with_pec` variant (e.g. [`asynch::Smbus::write_byte_with_pec`])
+//! that appends a PEC byte on writes and verifies the trailing PEC byte
+//! on reads.
 //!
-//! Implementations that do not support PEC return `None` from
-//! `get_pec_calc()`; any operation with `use_pec = true` then fails with
-//! [`ErrorKind::Pec`].
+//! The PEC is computed over the bytes that appear on the wire (address,
+//! register, payload, …) in bus order. Implementations are free to
+//! produce the PEC however they wish — by software computation, a
+//! hardware peripheral, or a third-party crate. The software
+//! implementation [`asynch::SwSmbusI2c`] uses the [`smbus_pec`] crate.
+//!
+//! Implementations that cannot support PEC should return
+//! [`ErrorKind::PecNotAvailable`] from every `*_with_pec` method while
+//! still servicing the non-PEC variants normally.
 //!
 //! # For driver authors
 //!
@@ -37,10 +44,16 @@
 //! - Block transfers are capped at 255 bytes per the SMBus specification;
 //!   exceeding this returns [`ErrorKind::TooLargeBlockTransaction`].
 //!
+//! - Block reads and the read leg of the block write/read process call
+//!   verify that the device-reported byte count matches the caller's
+//!   expected length and return [`ErrorKind::BlockSizeMismatch`]
+//!   otherwise. The size check runs before any PEC verification.
+//!
 //! - The SMBus slave timeout (35 ms) is reported as [`ErrorKind::Timeout`].
 //!
 //! [`embedded_hal_async::i2c`]:
 //! https://docs.rs/embedded-hal-async/1.0.0/embedded_hal_async/i2c/index.html
+//! [`smbus_pec`]: https://docs.rs/smbus-pec
 
 pub mod asynch;
 
@@ -113,6 +126,9 @@ pub enum ErrorKind {
     Timeout,
     /// Packet Error Checking (PEC) byte incorrect.
     Pec,
+    /// A PEC-requiring operation was invoked on an implementation that
+    /// does not support PEC.
+    PecNotAvailable,
     /// Block read/write too large transfer, at most 255 bytes can be read/written at once.
     TooLargeBlockTransaction,
     /// Block read returned a byte count that did not match the caller's
@@ -146,6 +162,10 @@ impl core::fmt::Display for ErrorKind {
             Self::I2c(e) => e.fmt(f),
             Self::Timeout => write!(f, "Bus timeout, SMBus defines slave timeout as 35ms"),
             Self::Pec => write!(f, "Packet Error Checking (PEC) byte incorrect."),
+            Self::PecNotAvailable => write!(
+                f,
+                "PEC was requested but this implementation does not support PEC."
+            ),
             Self::TooLargeBlockTransaction => write!(
                 f,
                 "Block read/write transfer size too large, at most 255 bytes can be read/written at once."

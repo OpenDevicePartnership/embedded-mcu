@@ -1,82 +1,40 @@
 //! Async SMBus controller trait and software implementation.
 //!
 //! This module defines the [`Smbus`] async controller trait describing the
-//! SMBus protocol surface. The trait declares the protocol-level
-//! operations as required methods plus two associated items —
-//! [`Smbus::PecCalc`] and [`Smbus::get_pec_calc`] — and a
-//! default-implemented helper [`Smbus::check_pec`].
+//! SMBus protocol surface. The trait declares each SMBus protocol
+//! transaction as a required method; PEC-capable transactions appear
+//! twice, once as a plain variant and once as a `*_with_pec` variant
+//! that handles PEC computation or verification.
 //!
 //! Concrete bit-banging of the protocol on top of an
-//! [`embedded_hal_async::i2c::I2c`] bus is provided by [`SwSmbusI2c`].
+//! [`embedded_hal_async::i2c::I2c`] bus is provided by [`SwSmbusI2c`],
+//! which uses the [`smbus_pec`] crate to compute and verify PEC bytes.
 //! HAL authors with a hardware SMBus peripheral may instead implement
-//! [`Smbus`] directly.
+//! [`Smbus`] directly and handle PEC however the peripheral supports it.
 //!
 //! See the [parent module](super) for the protocol overview, PEC handling,
 //! and driver/HAL guidance.
 
 use core::hash::Hasher;
-use core::marker::PhantomData;
 
-use crate::smbus::bus::Error as SMBusError;
 use embedded_hal_async::i2c::{Error as I2cError, I2c, Operation};
-
-/// PEC calculator factory for [`SwSmbusI2c`].
-///
-/// Decouples [`SwSmbusI2c`] from a particular PEC implementation. Provide
-/// a type implementing this trait as the `P` type parameter of
-/// [`SwSmbusI2c`] to describe what PEC calculator (if any) the bus should
-/// use.
-pub trait PecProvider {
-    /// PEC calculator type.
-    type Calc: Hasher;
-
-    /// Construct a fresh PEC calculator, or return `None` when PEC is
-    /// unsupported on this bus. When `None` is returned, any operation
-    /// invoked with `use_pec = true` fails with
-    /// [`ErrorKind::Pec`](crate::smbus::bus::ErrorKind::Pec).
-    fn new_calc() -> Option<Self::Calc>;
-}
 
 /// Async SMBus controller trait.
 ///
-/// Declares the SMBus protocol surface. Implementations may either be a
-/// software protocol-basher over a generic I²C bus (see [`SwSmbusI2c`])
-/// or a HAL-level wrapper around a hardware SMBus peripheral.
+/// Declares the SMBus protocol surface. Each PEC-capable transaction is
+/// exposed twice: a plain method that issues the transaction with no PEC
+/// byte on the wire, and a `*_with_pec` method that appends a PEC byte on
+/// writes or verifies the trailing PEC byte on reads. Implementations
+/// that do not support PEC should return
+/// [`ErrorKind::PecNotAvailable`](crate::smbus::bus::ErrorKind::PecNotAvailable)
+/// from every `*_with_pec` method while still servicing the plain
+/// variants.
+///
+/// Implementations may either be a software protocol-basher over a
+/// generic I²C bus (see [`SwSmbusI2c`]) or a HAL-level wrapper around a
+/// hardware SMBus peripheral.
 #[allow(async_fn_in_trait)]
 pub trait Smbus: crate::smbus::bus::ErrorType {
-    /// PEC (Packet Error Code) calculator type.
-    ///
-    /// When a SMBus operation requests PEC verification (`use_pec = true`),
-    /// implementations should return a `PecCalc` instance from `get_pec_calc()`
-    /// that is then fed the transmitted/received bytes in bus order. The calculator
-    /// should expose the checksum through `finish()`; this crate treats the
-    /// resulting value as a single-byte PEC.
-    ///
-    /// The type must implement `core::hash::Hasher`. PEC calculators are obtained
-    /// via the `get_pec_calc()` method, which returns `Option<Self::PecCalc>`. If
-    /// `get_pec_calc()` returns `None`, any operation with `use_pec = true` will
-    /// return an error of kind `ErrorKind::Pec`.
-    type PecCalc: core::hash::Hasher;
-
-    /// Obtain a PEC calculator instance if PEC support is available.
-    ///
-    /// Returns `Some(calculator)` if PEC support is available, or `None` if
-    /// not. When `None` is returned, any operation with `use_pec = true`
-    /// fails with an error of kind
-    /// [`ErrorKind::Pec`](crate::smbus::bus::ErrorKind::Pec).
-    fn get_pec_calc() -> Option<Self::PecCalc>;
-
-    /// Check PEC (Packet Error Code) validity.
-    ///
-    /// Compares a received PEC byte against a computed PEC value. Only the
-    /// low byte of `computed_pec` is used.
-    fn check_pec(received_pec: u8, computed_pec: u64) -> Result<(), <Self as crate::smbus::bus::ErrorType>::Error> {
-        computed_pec
-            .eq(&received_pec.into())
-            .then_some(())
-            .ok_or_else(|| <Self as crate::smbus::bus::ErrorType>::Error::from_kind(crate::smbus::bus::ErrorKind::Pec))
-    }
-
     /// Quick Command.
     async fn quick_command(
         &mut self,
@@ -255,13 +213,6 @@ pub trait Smbus: crate::smbus::bus::ErrorType {
 }
 
 impl<T: Smbus + ?Sized> Smbus for &mut T {
-    type PecCalc = T::PecCalc;
-
-    #[inline]
-    fn get_pec_calc() -> Option<Self::PecCalc> {
-        T::get_pec_calc()
-    }
-
     #[inline]
     async fn quick_command(
         &mut self,
@@ -459,19 +410,18 @@ impl<T: Smbus + ?Sized> Smbus for &mut T {
 
 /// Software SMBus controller built on top of an async I²C bus.
 ///
-/// `SwSmbusI2c<I, P>` implements [`Smbus`] by bit-banging the SMBus
-/// protocol on top of an [`embedded_hal_async::i2c::I2c`] bus `I`. PEC
-/// support is delegated to the [`PecProvider`] `P`.
-pub struct SwSmbusI2c<I, P> {
+/// `SwSmbusI2c<I>` implements [`Smbus`] by bit-banging the SMBus protocol
+/// on top of an [`embedded_hal_async::i2c::I2c`] bus `I`. PEC computation
+/// and verification are provided by the [`smbus_pec`] crate.
+pub struct SwSmbusI2c<I> {
     i2c: I,
-    _pec: PhantomData<P>,
 }
 
-impl<I, P> SwSmbusI2c<I, P> {
+impl<I> SwSmbusI2c<I> {
     /// Wrap an I²C bus to form a software SMBus controller.
     #[inline]
     pub const fn new(i2c: I) -> Self {
-        Self { i2c, _pec: PhantomData }
+        Self { i2c }
     }
 
     /// Consume the wrapper and return the underlying I²C bus.
@@ -493,43 +443,41 @@ impl<I, P> SwSmbusI2c<I, P> {
     }
 }
 
-impl<I, P> crate::smbus::bus::ErrorType for SwSmbusI2c<I, P> {
+impl<I> crate::smbus::bus::ErrorType for SwSmbusI2c<I> {
     type Error = crate::smbus::bus::ErrorKind;
 }
 
-impl<I, P> SwSmbusI2c<I, P>
-where
-    P: PecProvider,
-{
-    /// Obtain a fresh PEC calculator pre-fed with the write-address byte,
-    /// or [`ErrorKind::Pec`](crate::smbus::bus::ErrorKind::Pec) if the
-    /// provider returns `None`.
-    fn pec_calc_with_write_addr(address: u8) -> Result<P::Calc, crate::smbus::bus::ErrorKind> {
-        let mut pec = P::new_calc().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
+impl<I> SwSmbusI2c<I> {
+    /// Obtain a fresh PEC calculator pre-fed with the write-address byte.
+    fn pec_calc_with_write_addr(address: u8) -> smbus_pec::Pec {
+        let mut pec = smbus_pec::Pec::new();
         pec.write_u8(crate::smbus::bus::write_address_byte(address));
-        Ok(pec)
+        pec
     }
 
-    /// Obtain a fresh PEC calculator pre-fed with the read-address byte,
-    /// or [`ErrorKind::Pec`](crate::smbus::bus::ErrorKind::Pec) if the
-    /// provider returns `None`. Used by pure-read transactions (e.g.
-    /// Receive Byte) whose first wire byte is the read-direction address.
-    fn pec_calc_with_read_addr(address: u8) -> Result<P::Calc, crate::smbus::bus::ErrorKind> {
-        let mut pec = P::new_calc().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
+    /// Obtain a fresh PEC calculator pre-fed with the read-address byte.
+    /// Used by pure-read transactions (e.g. Receive Byte) whose first wire
+    /// byte is the read-direction address.
+    fn pec_calc_with_read_addr(address: u8) -> smbus_pec::Pec {
+        let mut pec = smbus_pec::Pec::new();
         pec.write_u8(crate::smbus::bus::read_address_byte(address));
-        Ok(pec)
+        pec
     }
 
-    /// Truncate a finished PEC value to its low byte.
-    fn finalize_pec_byte(pec: u64) -> Result<u8, crate::smbus::bus::ErrorKind> {
-        pec.try_into().map_err(|_| crate::smbus::bus::ErrorKind::Pec)
+    /// Compare a received PEC byte against a computed PEC value. Only the
+    /// low byte of `computed_pec` is used.
+    fn check_pec(received_pec: u8, computed_pec: u64) -> Result<(), crate::smbus::bus::ErrorKind> {
+        if computed_pec as u8 == received_pec {
+            Ok(())
+        } else {
+            Err(crate::smbus::bus::ErrorKind::Pec)
+        }
     }
 }
 
-impl<I, P> SwSmbusI2c<I, P>
+impl<I> SwSmbusI2c<I>
 where
     I: I2c,
-    P: PecProvider,
 {
     /// Write a buffer of data with optional PEC computation.
     ///
@@ -543,10 +491,10 @@ where
         operations: &mut [u8],
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         if use_pec {
-            let mut pec = Self::pec_calc_with_write_addr(address)?;
+            let mut pec = Self::pec_calc_with_write_addr(address);
             let (pec_elem, rest) = operations.split_last_mut().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
             pec.write(rest);
-            *pec_elem = Self::finalize_pec_byte(pec.finish())?;
+            *pec_elem = pec.finish() as u8;
         }
         self.i2c
             .write(address, operations)
@@ -568,14 +516,14 @@ where
         read: &mut [u8],
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
         if use_pec {
-            let mut pec = Self::pec_calc_with_read_addr(address)?;
+            let mut pec = Self::pec_calc_with_read_addr(address);
             self.i2c
                 .read(address, read)
                 .await
                 .map_err(|e| crate::smbus::bus::ErrorKind::from(e.kind()))?;
             let (pec_byte, rest) = read.split_last().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
             pec.write(rest);
-            <Self as Smbus>::check_pec(*pec_byte, pec.finish())?;
+            Self::check_pec(*pec_byte, pec.finish())?;
         } else {
             self.i2c
                 .read(address, read)
@@ -597,10 +545,10 @@ where
         write: &[u8],
         read: &mut [u8],
     ) -> Result<(), crate::smbus::bus::ErrorKind> {
-        // When PEC is requested, fail fast without touching the bus if no
-        // PEC calculator is available.
+        // When PEC is requested, prepare the calculator before touching
+        // the bus.
         let mut pec = if use_pec {
-            Some(Self::pec_calc_with_write_addr(address)?)
+            Some(Self::pec_calc_with_write_addr(address))
         } else {
             None
         };
@@ -613,24 +561,16 @@ where
             pec.write_u8(crate::smbus::bus::read_address_byte(address));
             let (pec_byte, rest) = read.split_last().ok_or(crate::smbus::bus::ErrorKind::Pec)?;
             pec.write(rest);
-            <Self as Smbus>::check_pec(*pec_byte, pec.finish())?;
+            Self::check_pec(*pec_byte, pec.finish())?;
         }
         Ok(())
     }
 }
 
-impl<I, P> Smbus for SwSmbusI2c<I, P>
+impl<I> Smbus for SwSmbusI2c<I>
 where
     I: I2c,
-    P: PecProvider,
 {
-    type PecCalc = P::Calc;
-
-    #[inline]
-    fn get_pec_calc() -> Option<Self::PecCalc> {
-        P::new_calc()
-    }
-
     #[inline]
     async fn quick_command(&mut self, address: u8, read: bool) -> Result<(), crate::smbus::bus::ErrorKind> {
         self.i2c
@@ -747,7 +687,7 @@ where
         word: u16,
     ) -> Result<u16, crate::smbus::bus::ErrorKind> {
         let mut buf = [0u8; 3];
-        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        let mut pec = Self::pec_calc_with_write_addr(address);
         pec.write_u8(register);
         pec.write(&word.to_le_bytes());
         pec.write_u8(crate::smbus::bus::read_address_byte(address));
@@ -800,11 +740,11 @@ where
         if data.len() > crate::smbus::bus::MAX_BLOCK_SIZE {
             return Err(crate::smbus::bus::ErrorKind::TooLargeBlockTransaction);
         }
-        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        let mut pec = Self::pec_calc_with_write_addr(address);
         pec.write_u8(register);
         pec.write_u8(data.len() as u8);
         pec.write(data);
-        let pec: u8 = Self::finalize_pec_byte(pec.finish())?;
+        let pec = pec.finish() as u8;
         self.i2c
             .transaction(
                 address,
@@ -861,7 +801,7 @@ where
         }
         let mut msg_size = [0u8];
         let mut pec_buf = [0u8];
-        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        let mut pec = Self::pec_calc_with_write_addr(address);
         pec.write_u8(register);
         pec.write_u8(crate::smbus::bus::read_address_byte(address));
         self.i2c
@@ -933,7 +873,7 @@ where
         }
         let mut read_msg_size = [0u8];
         let mut pec_buf = [0u8];
-        let mut pec = Self::pec_calc_with_write_addr(address)?;
+        let mut pec = Self::pec_calc_with_write_addr(address);
         pec.write_u8(register);
         pec.write_u8(write_data.len() as u8);
         pec.write(write_data);
