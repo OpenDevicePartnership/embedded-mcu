@@ -1,5 +1,10 @@
 # Copilot Instructions
 
+> **See also: [`AGENTS.md`](../AGENTS.md)** at the repository root for the full
+> guide to working in this codebase (workspace layout, invariants, build/test/
+> lint commands, per-pilot notes, and common pitfalls). This file remains
+> authoritative for commit-message formatting and AI attribution.
+
 ## Commit Messages
 - Subject line: capitalized, 50 characters or less, imperative mood (e.g., "Fix bug" not "Fixed bug")
 - Separate subject from body with a blank line
