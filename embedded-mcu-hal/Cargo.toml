@@ -17,16 +17,22 @@ chrono = { version = "^0.4", default-features = false, optional = true }
 defmt = { version = "1.0", optional = true }
 embedded-hal = { workspace = true }
 num_enum = { version = "0.7.5", default-features = false }
+embedded-hal-async = "1.0.0"
+smbus-pec = { version = "1.0", default-features = false }
 
 [dev-dependencies]
 proptest = "1.0.0"
 tokio = { version = "1", features = ["macros", "rt", "time"] }
+embedded-hal-mock = { version = "0.11", default-features = false, features = [
+    "eh1",
+    "embedded-hal-async",
+] }
 
 [features]
 default = []
 
 chrono = ["dep:chrono"]
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "embedded-hal-async/defmt-03"]
 
 [lints]
 workspace = true
