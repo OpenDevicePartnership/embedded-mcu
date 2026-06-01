@@ -28,6 +28,11 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = " Additionally, this is ODP owned crate."
 
+[[audits.embedded-mcu-hal]]
+who = "Felipe Balbi <febalbi@microsoft.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.0 -> 0.3.0"
+
 [[audits.errno]]
 who = "Felipe Balbi <febalbi@microsoft.com>"
 criteria = "safe-to-run"
